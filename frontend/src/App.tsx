@@ -1,6 +1,7 @@
 import { Fragment as ReactFragment, useEffect, useMemo, useRef, useState } from 'react'
-import { GitService } from '../bindings/crab.gitsync'
-import type { State } from '../bindings/crab.gitsync/models'
+import { GitService, UpdateService } from '../bindings/crab.gitsync'
+import type { State, UpdateState } from '../bindings/crab.gitsync/models'
+import UpdatePanel from './UpdatePanel'
 import type { Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
 import './App.css'
 
@@ -38,6 +39,8 @@ function statusOf(repo: Repository): [string, string] {
 
 function App() {
   const [state, setState] = useState<State>(initial)
+  const [update, setUpdate] = useState<UpdateState>({version:'',repository:'',platform:'',phase:'idle',busy:false,latestVersion:'',notes:'',written:0,total:0,authSource:'',checkedAt:'',error:''})
+  const [showUpdates,setShowUpdates] = useState(false)
   const [path, setPath] = useState(() => localStorage.getItem('crab.scanPath') || '')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
@@ -60,9 +63,9 @@ function App() {
     const poll = async () => {
       let delay = 1000
       try {
-        const snapshot = await GitService.GetState()
-        if (!stopped) { setState(snapshot); setConnected(true) }
-        delay = snapshot.busy ? 300 : 1000
+        const [snapshot, updateSnapshot] = await Promise.all([GitService.GetState(),UpdateService.GetState()])
+        if (!stopped) { setState(snapshot); setUpdate(updateSnapshot); setConnected(true) }
+        delay = snapshot.busy || updateSnapshot.busy ? 300 : 1000
       } catch { if (!stopped) setConnected(false) }
       if (!stopped) timer = setTimeout(poll, delay)
     }
@@ -81,7 +84,7 @@ function App() {
   const logs = (state.logs || []).filter(l => l.id > logCutoff && (logFilter === 'all' || l.level === logFilter))
   const lastLogID = logs.slice(-1)[0]?.id
   useEffect(() => { if (follow && logBody.current) logBody.current.scrollTop = logBody.current.scrollHeight }, [lastLogID, follow, logFilter])
-  const busy = state.busy || pending
+  const busy = state.busy || pending || update.phase === 'restarting'
   const percent = state.total ? Math.round(state.completed / state.total * 100) : state.phase === 'done' ? 100 : 0
   const elapsed = state.startedAt ? Math.max(0, Math.round((new Date(state.finishedAt || Date.now()).getTime() - new Date(state.startedAt).getTime()) / 1000)) : 0
   const toggle = (value: string) => setSelected(old => { const next = new Set(old); next.has(value) ? next.delete(value) : next.add(value); return next })
@@ -104,10 +107,11 @@ function App() {
       <div className="brand"><span className="brand-icon"><Icon name="branch" size={24}/></span><div><strong>Crab<span>.GitSync</span></strong><small>仓库同步工具</small></div></div>
       <nav aria-label="主导航"><button className="nav-item active" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><Icon name="branch"/>仓库工作台<span className="nav-count">{repos.length}</span></button><button className="nav-item" onClick={() => logSection.current?.scrollIntoView({ behavior: 'smooth' })}><Icon name="terminal"/>任务日志</button></nav>
       <div className="sidebar-note"><Icon name="github" size={21}/><strong>连接你的代码</strong><p>获取远端更新，让本地仓库信息保持最新。</p><span className="tag blue">仅获取 · Fetch</span></div>
-      <div className="sidebar-bottom"><button className="nav-item" onClick={() => setHelp(!help)} aria-expanded={help}><Icon name="info"/>使用说明</button><div className="version">Crab.GitSync <span>v0.1.0</span></div></div>
+      <div className="sidebar-bottom"><button className="nav-item" onClick={() => setShowUpdates(!showUpdates)} aria-expanded={showUpdates}><Icon name="download"/>应用更新{update.latestVersion && <span className="nav-count">新</span>}</button><button className="nav-item" onClick={() => setHelp(!help)} aria-expanded={help}><Icon name="info"/>使用说明</button><div className="version">Crab.GitSync <span>v{update.version || '…'}</span></div></div>
     </aside>
     <main>
       <header className="page-header"><div><div className="breadcrumb">工作空间 <Icon name="chevron" size={12}/> 仓库工作台</div><h1>仓库工作台</h1><p>扫描本地 Git 仓库，一处查看状态与获取远端更新。</p></div><div className="connection"><i className={connected ? 'online' : ''}/>{connected ? 'Git 服务已连接' : '正在连接桌面服务'}</div></header>
+      {(showUpdates || ['available','downloading','verifying','installing','ready','restarting','error'].includes(update.phase)) && <UpdatePanel state={update} gitBusy={state.busy} connected={connected} onChange={setUpdate}/>}
       {help && <section className="help-panel"><strong>如何使用</strong><p>选择或输入一个目录，递归扫描其中的仓库。勾选仓库后点击「获取远端更新」，对各仓库的全部远端执行 fetch。认证使用本机 Git 配置，需提前完成 SSH 或凭据配置。</p><p>不会执行 pull、merge、push 或切换分支。扫描跳过 .git、node_modules、.venv，不跟随子目录符号链接。领先／落后数基于本地跟踪分支，fetch 后刷新。日志保留最近 500 条。</p><button onClick={() => setHelp(false)}>收起说明</button></section>}
       {error && <div className="error-banner" role="alert"><Icon name="info"/><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
       <section className="scan-panel" aria-labelledby="scan-heading">
@@ -132,4 +136,3 @@ function App() {
   </div>
 }
 export default App
-

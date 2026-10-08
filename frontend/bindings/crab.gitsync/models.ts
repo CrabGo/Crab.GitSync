@@ -29,3 +29,18 @@ export interface State {
     "repositories": gitengine$0.Repository[] | null;
     "logs": LogEntry[] | null;
 }
+
+export interface UpdateState {
+    "version": string;
+    "repository": string;
+    "platform": string;
+    "phase": string;
+    "busy": boolean;
+    "latestVersion": string;
+    "notes": string;
+    "written": number;
+    "total": number;
+    "authSource": string;
+    "checkedAt": string;
+    "error": string;
+}

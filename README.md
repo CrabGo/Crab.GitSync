@@ -16,7 +16,7 @@ Fetch 只获取远端更新，不执行 pull、merge、push 或切换分支。�
 
 ## 环境与运行
 
-需要 Go 1.24+、Node.js 22.12+、npm、系统 Git 和 Wails 3 CLI。当前固定使用 Wails `v3.0.0-beta.28`，Windows 运行需要 WebView2 Runtime。
+需要 Go 1.25+、Node.js 22.12+、npm、系统 Git 和 Wails 3 CLI。当前固定使用 Wails `v3.0.0-beta.28`，Windows 运行需要 WebView2 Runtime。
 
 ```powershell
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
@@ -66,10 +66,40 @@ wails3 generate bindings -ts -i
 
 - `main.go`：桌面应用入口。
 - `gitservice.go`：异步任务、状态快照、日志和原生目录选择。
+- `updateservice.go`：启动检查、定时检查、更新状态、下载与重启。
+- `internal/updatefeed`：私有 GitHub Releases 认证、文件选择与校验值读取。
 - `internal/gitengine`：仓库发现、Git 信息读取、fetch 和跨平台进程配置。
 - `frontend/src`：仓库工作台界面。
 - `frontend/bindings`：自动生成的 Go/TypeScript 绑定。
 - `build`：Wails 平台构建与打包配置。
+
+## 应用自动更新
+
+发布源为 [CrabGo/Crab.GitSync Releases](https://github.com/CrabGo/Crab.GitSync/releases)，当前是私有仓库。应用启动时检查一次，此后每 6 小时检查稳定版本。在侧栏「应用更新」中也可手动检查。发现新版后，点击下载更新，查看下载进度；SHA-256 校验成功后，点击「重启应用更新」完成程序替换。正在运行的扫描或 fetch 会阻止重启。取消或下载/校验失败不会替换当前程序。
+
+认证按顺序读取 `GITSYNC_GITHUB_TOKEN`、`GH_TOKEN`、`GITHUB_TOKEN`，最后尝试本机 `gh auth token --hostname github.com`。推荐安装 GitHub CLI 并执行 `gh auth login`。令牌须具备读取本仓库 Releases 的权限；程序不保存令牌，也不会把令牌交给界面或打进发布文件。私有文件通过认证后的 GitHub API 下载，重定向到 CDN 时移除认证头。Windows 下默认使用系统代理，环境变量代理优先。
+
+当前发布与自动更新支持 Windows amd64，文件名固定为 `crab-gitsync-windows-amd64.exe`，同一 Release 必须包含 `SHA256SUMS`。下载校验同时核对 GitHub 返回的文件 digest（如有）。这是文件完整性校验；未配置独立的发布签名或 Windows Authenticode 签名。
+
+更新要求安装目录可写；如果放在需要管理员权限的目录中，可从 Releases 手动下载覆盖。更新替换、失败恢复与重启使用 Wails 内置 updater helper。扫描路径保留在应用的本地存储中。
+
+### 发布新版
+
+```powershell
+./build/release.ps1 -Version 0.2.0
+```
+
+该脚本构建前端、生成绑定、执行 Go 测试和静态检查，再构建带版本信息的 Windows 程序，输出到 `bin/release`。版本通过 `-X main.Version` 注入程序，同时写入 Windows 文件元数据。
+
+完成代码提交后，推送稳定版本标签，例如：
+
+```powershell
+git tag v0.3.0
+git push origin main
+git push origin v0.3.0
+```
+
+`.github/workflows/release.yml` 在 main/PR 上执行构建检查，在版本标签上创建草稿 Release，上传程序与校验文件后一起发布，避免应用读取到文件不完整的 Release。不能覆盖已经发布的版本；修复请发布新标签。
 
 ## 可继续讨论
 

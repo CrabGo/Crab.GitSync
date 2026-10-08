@@ -40,11 +40,12 @@ type State struct {
 
 // GitService owns one cancellable task and exposes immutable snapshots to the UI.
 type GitService struct {
-	app    *application.App
-	mu     sync.Mutex
-	state  State
-	cancel context.CancelFunc
-	logID  int
+	app        *application.App
+	mu         sync.Mutex
+	state      State
+	cancel     context.CancelFunc
+	logID      int
+	restarting bool
 }
 
 func NewGitService() *GitService {
@@ -78,6 +79,9 @@ func (s *GitService) logLocked(level, message string) {
 }
 
 func (s *GitService) begin(kind, root, phase string) (context.Context, error) {
+	if s.restarting {
+		return nil, fmt.Errorf("应用正在重启更新，请稍后操作")
+	}
 	if s.state.Busy {
 		return nil, fmt.Errorf("已有任务正在运行，请等待完成或取消")
 	}
