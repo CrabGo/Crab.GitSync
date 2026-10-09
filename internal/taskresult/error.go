@@ -106,7 +106,7 @@ func Wrap(err error, stage string) *Failure {
 	}
 	return f
 }
-func HTTPStatus(status int) error { return fmt.Errorf("公开发布源返回 HTTP %d", status) }
+func HTTPStatus(status int) error { return fmt.Errorf("HTTP %d", status) }
 
 type Result struct {
 	TaskID           string   `json:"taskID"`

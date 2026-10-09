@@ -12,12 +12,27 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as diagnostics$0 from "./internal/diagnostics/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as networksettings$0 from "./internal/networksettings/models.js";
+
+export function CancelDiagnosis(): $CancellablePromise<void> {
+    return $Call.ByID(2995121266);
+}
 
 export function GetConfig(): $CancellablePromise<networksettings$0.Config> {
     return $Call.ByID(831376707);
 }
 
+export function GetDiagnosis(): $CancellablePromise<diagnostics$0.State> {
+    return $Call.ByID(2105809602);
+}
+
 export function SaveConfig(config: networksettings$0.Config): $CancellablePromise<void> {
     return $Call.ByID(2776313644, config);
+}
+
+export function StartDiagnosis(remote: string): $CancellablePromise<void> {
+    return $Call.ByID(1233950726, remote);
 }

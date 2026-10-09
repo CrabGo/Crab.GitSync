@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NetworkService } from '../bindings/crab.gitsync'
+import type { State as DiagnosisState } from '../bindings/crab.gitsync/internal/diagnostics/models'
 
 export default function NetworkPanel({ connected }: { connected: boolean }) {
   const [config,setConfig]=useState({enabled:true,protocol:'http',host:'127.0.0.1',port:33210})
@@ -7,6 +8,20 @@ export default function NetworkPanel({ connected }: { connected: boolean }) {
   const [pending,setPending]=useState(false)
   const [error,setError]=useState('')
   const [saved,setSaved]=useState(false)
+  const [remote,setRemote]=useState('https://github.com/CrabGo/Crab.GitSync.git')
+  const [diagnosis,setDiagnosis]=useState<DiagnosisState>({busy:false,status:'idle',strategy:'',remote:'',startedAt:'',finishedAt:'',steps:[]})
+  const [diagnosing,setDiagnosing]=useState(false)
+  useEffect(()=>{
+    if(!connected)return
+    let disposed=false
+    let timer:ReturnType<typeof setTimeout>
+    const poll=async()=>{try{const state=await NetworkService.GetDiagnosis();if(!disposed)setDiagnosis(state)}catch(e){if(!disposed)setError(String(e))}if(!disposed)timer=setTimeout(poll,500)}
+    void poll();return()=>{disposed=true;clearTimeout(timer)}
+  },[connected])
+  const diagnose=async()=>{
+    setDiagnosing(true);setError('')
+    try{await NetworkService.StartDiagnosis(remote);setDiagnosis(await NetworkService.GetDiagnosis())}catch(e){setError(String(e))}finally{setDiagnosing(false)}
+  }
   useEffect(()=>{
     if(!connected)return
     let disposed=false
@@ -31,5 +46,10 @@ export default function NetworkPanel({ connected }: { connected: boolean }) {
     </fieldset>
     {saved && <p className="proxy-saved" role="status">配置已保存，新网络请求生效；运行中的 Git 任务使用启动时配置。</p>}
     {error && <p className="update-error" role="alert">{error}</p>}
+    <div className="diagnosis-panel"><h3>连接诊断</h3><p className="proxy-hint">使用已保存配置，分步测试代理端口、GitHub HTTPS 和指定 Git 远端。诊断只读取信息，可随时取消。</p>
+      <label className="diagnosis-remote">Git 仓库地址<input value={remote} disabled={diagnosis.busy||diagnosing} onChange={e=>setRemote(e.target.value)} placeholder="https://github.com/owner/repo.git"/></label>
+      <div className="update-actions"><button disabled={!connected||diagnosis.busy||diagnosing} onClick={()=>void diagnose()}>测试连接</button>{diagnosis.busy&&<button onClick={()=>void NetworkService.CancelDiagnosis().catch(e=>setError(String(e)))}>取消诊断</button>}<span>{diagnosis.strategy}</span></div>
+      <div role="status">{diagnosis.steps?.map(step=><div className="task-result" key={step.name}><strong>{step.name} · {{queued:'等待测试',running:'测试中',success:'连接成功',error:'失败',skipped:'跳过',cancelled:'已取消'}[step.status]||step.status}</strong><span>{(step.durationMS/1000).toFixed(2)} 秒 {step.info}</span>{step.failure&&<><p>{step.failure.message}</p><details><summary>错误详情</summary><pre>{step.failure.detail}</pre></details></>}</div>)}</div>
+    </div>
   </section>
 }

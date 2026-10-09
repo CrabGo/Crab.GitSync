@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crab.gitsync/internal/diagnostics"
 	"crab.gitsync/internal/networksettings"
 	"crab.gitsync/internal/updatefeed"
 	"embed"
@@ -25,7 +26,7 @@ func main() {
 		log.Fatal(err)
 	}
 	store, loadErr := networksettings.New(filepath.Join(configDir, "Crab.GitSync", "network.json"))
-	network := &NetworkService{store: store, loadError: loadErr}
+	network := &NetworkService{store: store, loadError: loadErr, diagnostics: diagnostics.New(diagnostics.Probes{})}
 	proxy := func() *url.URL { value, _ := store.Get().URL(); return value }
 	service := NewGitService()
 	service.proxyURL = func() string {
@@ -57,6 +58,7 @@ func main() {
 	updates.attach(app)
 	app.OnShutdown(service.Cancel)
 	app.OnShutdown(updates.shutdown)
+	app.OnShutdown(network.CancelDiagnosis)
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { go updates.automaticChecks() })
 	desktop.attach(app, service, updates)
 	if err := app.Run(); err != nil {
