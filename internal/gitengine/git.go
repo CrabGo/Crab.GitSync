@@ -91,6 +91,10 @@ func isGitHub(value string) bool {
 // Discover walks subdirectories, including nested repos and worktrees. It never follows symlinks.
 // The visit callback receives an increasing directory count while total work is still unknown.
 func Discover(ctx context.Context, root string, visit func(int, string), warn func(string)) ([]string, error) {
+	return discover(ctx, root, nil, visit, warn)
+}
+
+func discover(ctx context.Context, root string, excludes []string, visit func(int, string), warn func(string)) ([]string, error) {
 	paths := []string{}
 	visited := 0
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
@@ -106,6 +110,9 @@ func Discover(ctx context.Context, root string, visit func(int, string), warn fu
 		}
 		if !entry.IsDir() {
 			return nil
+		}
+		if excluded(root, path, excludes) {
+			return filepath.SkipDir
 		}
 		if path != root {
 			switch entry.Name() {

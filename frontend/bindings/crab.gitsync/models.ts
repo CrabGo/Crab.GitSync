@@ -23,6 +23,7 @@ export interface State {
     "kind": string;
     "phase": string;
     "root": string;
+    "scanListID": string;
     "current": string;
     "visited": number;
     "completed": number;

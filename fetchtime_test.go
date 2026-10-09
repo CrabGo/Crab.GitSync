@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"crab.gitsync/internal/gitengine"
+	"crab.gitsync/internal/scansettings"
 )
 
 func TestFetchFreshnessRequiresCompleteNetworkSuccess(t *testing.T) {
@@ -64,7 +65,7 @@ func TestScanRetainsSessionFreshnessWithoutInventingIt(t *testing.T) {
 	if len(state.Repositories) != 1 || state.Repositories[0].LastSuccessfulFetch != "" {
 		t.Fatal("scan claimed remote freshness")
 	}
-	s.fetchTimes[path] = "2026-10-09T00:00:00Z"
+	s.fetchTimes[scansettings.PathKey(path)] = "2026-10-09T00:00:00Z"
 	if err := s.StartScan(path); err != nil {
 		t.Fatal(err)
 	}

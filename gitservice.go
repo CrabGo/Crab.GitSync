@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"crab.gitsync/internal/gitengine"
+	"crab.gitsync/internal/scansettings"
 	"crab.gitsync/internal/taskresult"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -29,6 +30,7 @@ type State struct {
 	Kind         string                 `json:"kind"`
 	Phase        string                 `json:"phase"`
 	Root         string                 `json:"root"`
+	ScanListID   string                 `json:"scanListID"`
 	Current      string                 `json:"current"`
 	Visited      int                    `json:"visited"`
 	Completed    int                    `json:"completed"`
@@ -59,6 +61,8 @@ type GitService struct {
 	retryEnabled      func() bool
 	waitRetry         func(context.Context, time.Duration) error
 	fetchTimes        map[string]string
+	scanLists         *scansettings.Store
+	scanLoadError     error
 }
 
 type autoRetryKey struct{}
@@ -200,7 +204,11 @@ func (s *GitService) StartScan(root string) error {
 }
 
 func (s *GitService) scan(ctx context.Context, root string) {
-	paths, err := gitengine.Discover(ctx, root, func(count int, path string) {
+	s.scanPaths(ctx, []string{root}, nil)
+}
+
+func (s *GitService) scanPaths(ctx context.Context, roots, excludes []string) {
+	paths, err := gitengine.DiscoverMany(ctx, roots, excludes, func(count int, path string) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.state.Visited, s.state.Current = count, path
@@ -243,7 +251,7 @@ func (s *GitService) scan(ctx context.Context, root string) {
 			result.Status = "error"
 			s.logLocked("error", path+"："+err.Error())
 		} else {
-			repo.LastSuccessfulFetch = s.fetchTimes[repo.Path]
+			repo.LastSuccessfulFetch = s.fetchTimes[scansettings.PathKey(repo.Path)]
 			s.state.Repositories = append(s.state.Repositories, repo)
 			s.state.Succeeded++
 			s.logLocked("success", fmt.Sprintf("已识别 %s · %s", repo.Name, repo.Branch))
@@ -268,13 +276,14 @@ func (s *GitService) startFetchLocked(paths []string, refreshOnly map[string]boo
 	selected := []gitengine.Repository{}
 	seen := map[string]bool{}
 	for _, path := range paths {
-		if seen[path] {
+		key := scansettings.PathKey(path)
+		if seen[key] {
 			continue
 		}
-		seen[path] = true
+		seen[key] = true
 		found := false
 		for _, repo := range s.state.Repositories {
-			if repo.Path == path {
+			if scansettings.PathKey(repo.Path) == key {
 				selected = append(selected, repo)
 				found = true
 				break
@@ -297,7 +306,7 @@ func (s *GitService) startFetchLocked(paths []string, refreshOnly map[string]boo
 		s.state.Results = append(s.state.Results, taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: "queued", Status: "queued"})
 	}
 	for i := range s.state.Repositories {
-		if seen[s.state.Repositories[i].Path] {
+		if seen[scansettings.PathKey(s.state.Repositories[i].Path)] {
 			s.state.Repositories[i].FetchStatus = "idle"
 		}
 	}
@@ -317,7 +326,7 @@ func (s *GitService) updateRepoLocked(path string, status, message string, refre
 		if refreshed != nil {
 			s.state.Repositories[i] = *refreshed
 		}
-		s.state.Repositories[i].LastSuccessfulFetch = s.fetchTimes[path]
+		s.state.Repositories[i].LastSuccessfulFetch = s.fetchTimes[scansettings.PathKey(path)]
 		s.state.Repositories[i].FetchStatus = status
 		if status == "refresh-error" {
 			s.state.Repositories[i].SyncStatus = "unknown"
@@ -359,7 +368,7 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 				networkSucceeded = true
 				if !refreshOnly[repo.Path] {
 					s.mu.Lock()
-					s.fetchTimes[repo.Path] = time.Now().Format(time.RFC3339Nano)
+					s.fetchTimes[scansettings.PathKey(repo.Path)] = time.Now().Format(time.RFC3339Nano)
 					s.mu.Unlock()
 				}
 				stage = "refresh"

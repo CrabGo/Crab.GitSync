@@ -12,3 +12,13 @@
 .merge-preview { padding: 12px; background: #f4f7fc; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
 .merge-preview p { margin: 6px 0; }
 .merge-preview small { display: block; color: #69758a; }
+
+.scan-lists { margin-top: 16px; }
+.scan-lists summary { cursor: pointer; font-weight: 600; }
+.scan-lists fieldset { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; }
+.scan-list-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.scan-list-controls label, .scan-list-fields label, .scan-list-field { display: flex; flex-direction: column; gap: 7px; font-size: 13px; }
+.scan-list-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.scan-lists input, .scan-lists select, .scan-lists textarea { border: 1px solid #dde3ed; border-radius: 7px; padding: 10px; background: white; color: #344259; font: inherit; }
+.scan-lists textarea { resize: vertical; min-height: 100px; }
+.scan-lists textarea:focus, .scan-lists input:focus { outline: 2px solid #b7ccfc; }

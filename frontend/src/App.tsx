@@ -4,12 +4,13 @@ import type { State, UpdateState } from '../bindings/crab.gitsync/models'
 import UpdatePanel from './UpdatePanel'
 import NetworkPanel from './NetworkPanel'
 import TaskResults from './TaskResults'
+import ScanLists from './ScanLists'
 import RepositoryActions from './RepositoryActions'
 import type { RepositoryMenu } from './RepositoryActions'
 import type { Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
 import './App.css'
 
-const initial: State = { taskID:'',sourceTaskID:'',results:[],busy: false, kind: '', phase: 'idle', root: '', current: '', visited: 0, completed: 0, total: 0, succeeded: 0, failed: 0, skipped: 0, startedAt: '', finishedAt: '', repositories: [], logs: [] }
+const initial: State = { taskID:'',sourceTaskID:'',scanListID:'',results:[],busy: false, kind: '', phase: 'idle', root: '', current: '', visited: 0, completed: 0, total: 0, succeeded: 0, failed: 0, skipped: 0, startedAt: '', finishedAt: '', repositories: [], logs: [] }
 const phases: Record<string, string> = { idle: '等待扫描', discovering: '正在发现仓库', inspecting: '正在读取仓库信息', fetching: '正在获取远端更新', operating: '正在执行仓库操作', done: '任务已完成', cancelled: '任务已取消', error: '任务失败' }
 const levels: Record<string, string> = { info: '信息', success: '成功', warn: '警告', error: '错误' }
 function Icon({ name, size = 18 }: { name: string, size?: number }) {
@@ -143,6 +144,7 @@ function App() {
         <div className="path-history"><label htmlFor="path-history">最近使用</label><select id="path-history" aria-label="历史扫描路径" disabled={busy || !history.length} value="" onChange={e => {if (e.target.value) {setPath(e.target.value); remember(e.target.value)}}}><option value="">选择历史路径（最近 20 个）</option>{history.map(value => <option key={value} value={value}>{value}</option>)}</select></div><div className="scan-hint">自动识别 Git 仓库、worktree 和裸仓库。扫描仅读取本地信息。</div>
         {state.phase !== 'idle' && <div className="progress-area"><div className="progress-heading"><span><i className={state.busy ? 'working-dot' : 'done-dot'}/>{phases[state.phase]}{state.phase === 'done' && state.failed > 0 ? '，部分项目需要查看日志' : ''}</span><span>{state.phase === 'discovering' ? `已遍历 ${state.visited} 个目录` : `${state.completed} / ${state.total}`}<b>{state.phase === 'discovering' ? '发现中' : `${percent}%`}</b></span></div><div className={`progress-track ${state.phase === 'discovering' ? 'indeterminate' : ''}`} role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.phase === 'discovering' ? undefined : percent}><div style={{ width: `${percent}%` }}/></div><div className="progress-bottom"><span title={state.current}>{state.current || state.root}</span><span>{elapsed} 秒{state.busy && <button className="cancel-btn" onClick={() => void perform(() => GitService.Cancel())}><Icon name="stop" size={13}/>取消任务</button>}</span></div></div>}
       </section>
+      <ScanLists connected={connected} busy={busy} defaultPath={path} onScan={id=>perform(async()=>{await GitService.StartScanList(id);setSelected(new Set());setExpanded('')})}/>
       <div className="summary-row"><div><span className="stat-icon blue"><Icon name="branch"/></span><span>已发现仓库<strong>{repos.length}</strong></span></div><div><span className="stat-icon violet"><Icon name="github"/></span><span>GitHub 仓库<strong>{repos.filter(r => r.remotes?.some(x => x.github)).length}</strong></span></div><div><span className="stat-icon amber"><Icon name="folder"/></span><span>本地有修改<strong>{repos.filter(r => r.changed > 0).length}</strong></span></div><div><span className="stat-icon green"><Icon name="download"/></span><span>远端领先<strong>{repos.filter(r => r.behind > 0).length}</strong></span></div></div>
       <section className="repo-panel" aria-labelledby="repo-heading">
         <div className="repo-heading"><div><h2 id="repo-heading">仓库列表 <span>{repos.length}</span></h2><p>选择仓库获取更新，右键仓库可合并、撤销修改或拉取。</p></div><button className="primary" disabled={busy || !selectedPaths.length || !connected} onClick={() => void perform(() => GitService.StartFetch(selectedPaths))}><Icon name="download"/>获取远端更新{selectedPaths.length > 0 && <span className="button-count">{selectedPaths.length}</span>}</button></div>

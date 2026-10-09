@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crab.gitsync/internal/gitengine"
+	"crab.gitsync/internal/scansettings"
 	"crab.gitsync/internal/taskresult"
 	"fmt"
 	"time"
@@ -12,7 +13,7 @@ var actionLabels = map[string]string{"fetch": "拉取", "merge": "合并", "disc
 
 func (s *GitService) scannedRepository(path string) (gitengine.Repository, error) {
 	for _, repo := range s.state.Repositories {
-		if repo.Path == path {
+		if scansettings.PathKey(repo.Path) == scansettings.PathKey(path) {
 			return repo, nil
 		}
 	}
@@ -21,14 +22,14 @@ func (s *GitService) scannedRepository(path string) (gitengine.Repository, error
 
 func (s *GitService) GetBranches(path string) ([]string, error) {
 	s.mu.Lock()
-	_, err := s.scannedRepository(path)
+	repo, err := s.scannedRepository(path)
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	return gitengine.Branches(ctx, path)
+	return gitengine.Branches(ctx, repo.Path)
 }
 
 // PreviewMerge is read-only and validates the current scanned scope.
@@ -44,7 +45,7 @@ func (s *GitService) PreviewMerge(path, action, target string) (gitengine.MergeP
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	preview, err := gitengine.PreviewMerge(ctx, path, action, target)
+	preview, err := gitengine.PreviewMerge(ctx, repo.Path, action, target)
 	if err == nil && preview.Branch != repo.Branch {
 		err = fmt.Errorf("当前分支已变化，请重新扫描")
 	}
@@ -89,6 +90,12 @@ func (s *GitService) startAction(path, action, target string, confirmed bool, pr
 	if err != nil {
 		return err
 	}
+	path = repo.Path
+	if preview != nil {
+		copy := *preview
+		copy.Path = path
+		preview = &copy
+	}
 	ctx, err := s.begin(action, s.state.Root, "operating")
 	if err != nil {
 		return err
@@ -109,7 +116,7 @@ func (s *GitService) startAction(path, action, target string, confirmed bool, pr
 				output, fetched, actionErr = gitengine.ExecuteMerge(ctx, *preview, strategy)
 				if fetched {
 					s.mu.Lock()
-					s.fetchTimes[path] = time.Now().Format(time.RFC3339Nano)
+					s.fetchTimes[scansettings.PathKey(path)] = time.Now().Format(time.RFC3339Nano)
 					s.mu.Unlock()
 				}
 			}

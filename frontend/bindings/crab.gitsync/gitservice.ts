@@ -15,6 +15,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as gitengine$0 from "./internal/gitengine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as scansettings$0 from "./internal/scansettings/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as taskresult$0 from "./internal/taskresult/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -46,6 +49,10 @@ export function GetFetchResults(taskID: string): $CancellablePromise<taskresult$
     return $Call.ByID(468996345, taskID);
 }
 
+export function GetScanLists(): $CancellablePromise<scansettings$0.List[] | null> {
+    return $Call.ByID(1918790747);
+}
+
 /**
  * GetState returns copies so a concurrent task cannot mutate a frontend response.
  */
@@ -60,11 +67,19 @@ export function PreviewMerge(path: string, action: string, target: string): $Can
     return $Call.ByID(2310478365, path, action, target);
 }
 
+export function RemoveScanList(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2551141512, id);
+}
+
 /**
  * RetryFailed retries errors only. A successful fetch with a failed refresh never fetches again.
  */
 export function RetryFailed(taskID: string): $CancellablePromise<void> {
     return $Call.ByID(1171788232, taskID);
+}
+
+export function SaveScanList(list: scansettings$0.List): $CancellablePromise<scansettings$0.List> {
+    return $Call.ByID(1032563213, list);
 }
 
 /**
@@ -90,4 +105,8 @@ export function StartMerge(preview: gitengine$0.MergePreview, strategy: string, 
  */
 export function StartScan(root: string): $CancellablePromise<void> {
     return $Call.ByID(1368166774, root);
+}
+
+export function StartScanList(id: string): $CancellablePromise<void> {
+    return $Call.ByID(4230096354, id);
 }
