@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"crab.gitsync/internal/gitengine"
+	"crab.gitsync/internal/taskresult"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -21,6 +22,8 @@ type LogEntry struct {
 }
 
 type State struct {
+	TaskID       string                 `json:"taskID"`
+	Results      []taskresult.Result    `json:"results"`
 	Busy         bool                   `json:"busy"`
 	Kind         string                 `json:"kind"`
 	Phase        string                 `json:"phase"`
@@ -40,18 +43,20 @@ type State struct {
 
 // GitService owns one cancellable task and exposes immutable snapshots to the UI.
 type GitService struct {
-	app        *application.App
-	mu         sync.Mutex
-	state      State
-	cancel     context.CancelFunc
-	logID      int
-	restarting bool
-	notify     func(string, string, string)
-	proxyURL   func() string
+	app               *application.App
+	mu                sync.Mutex
+	state             State
+	cancel            context.CancelFunc
+	logID             int
+	restarting        bool
+	notify            func(string, string, string)
+	proxyURL          func() string
+	fetchRepository   func(context.Context, string) error
+	inspectRepository func(context.Context, string) (gitengine.Repository, error)
 }
 
 func NewGitService() *GitService {
-	return &GitService{state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
+	return &GitService{fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
 }
 
 // ChooseDirectory opens the native directory picker. An empty result means cancelled.
@@ -69,6 +74,13 @@ func (s *GitService) GetState() State {
 		copy.Repositories[i].Remotes = append([]gitengine.Remote{}, s.state.Repositories[i].Remotes...)
 	}
 	copy.Logs = append([]LogEntry{}, s.state.Logs...)
+	copy.Results = append([]taskresult.Result{}, s.state.Results...)
+	for i := range copy.Results {
+		if copy.Results[i].Failure != nil {
+			f := *copy.Results[i].Failure
+			copy.Results[i].Failure = &f
+		}
+	}
 	return copy
 }
 
@@ -97,6 +109,8 @@ func (s *GitService) begin(kind, root, phase string) (context.Context, error) {
 	s.cancel = cancel
 	repos, logs := s.state.Repositories, s.state.Logs
 	s.state = State{Busy: true, Kind: kind, Phase: phase, Root: root, StartedAt: time.Now().Format(time.RFC3339), Repositories: repos, Logs: logs}
+	s.state.TaskID = fmt.Sprintf("task-%d", time.Now().UnixNano())
+	s.state.Results = []taskresult.Result{}
 	return ctx, nil
 }
 
@@ -151,14 +165,22 @@ func (s *GitService) scan(ctx context.Context, root string) {
 		s.mu.Lock()
 		s.state.Current = path
 		s.mu.Unlock()
+		started := time.Now()
 		repo, err := gitengine.Inspect(ctx, path)
+		result := taskresult.Result{TaskID: s.state.TaskID, Kind: "scan", Path: path, Branch: repo.Branch, Stage: "inspect", Status: "success", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), Failure: taskresult.Wrap(err, "inspect")}
 		if ctx.Err() != nil {
+			result.Status = "cancelled"
+			result.Failure = taskresult.Wrap(ctx.Err(), "inspect")
+			s.mu.Lock()
+			s.recordResultLocked(result)
+			s.mu.Unlock()
 			break
 		}
 		s.mu.Lock()
 		s.state.Completed++
 		if err != nil {
 			s.state.Failed++
+			result.Status = "error"
 			s.logLocked("error", path+"："+err.Error())
 		} else {
 			s.state.Repositories = append(s.state.Repositories, repo)
@@ -168,6 +190,7 @@ func (s *GitService) scan(ctx context.Context, root string) {
 				s.logLocked("warn", repo.Name+"："+repo.Error)
 			}
 		}
+		s.recordResultLocked(result)
 		s.mu.Unlock()
 	}
 	s.finish(ctx, nil)
@@ -204,6 +227,9 @@ func (s *GitService) StartFetch(paths []string) error {
 		return err
 	}
 	s.state.Total = len(selected)
+	for _, repo := range selected {
+		s.state.Results = append(s.state.Results, taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: "queued", Status: "queued"})
+	}
 	for i := range s.state.Repositories {
 		s.state.Repositories[i].FetchStatus = "idle"
 	}
@@ -232,25 +258,35 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository) {
 			break
 		}
 		s.mu.Lock()
+		started := time.Now()
 		s.state.Current = repo.Path
+		s.recordResultLocked(taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: "fetch", Status: "running", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano)})
 		s.updateRepoLocked(repo.Path, "fetching", "", nil)
 		s.logLocked("info", "获取远端更新："+repo.Name)
 		s.mu.Unlock()
 		var err error
+		stage := "fetch"
+		networkSucceeded := false
 		var refreshed *gitengine.Repository
 		if len(repo.Remotes) > 0 {
-			err = gitengine.Fetch(ctx, repo.Path)
+			err = s.fetchRepository(ctx, repo.Path)
 			if err == nil {
-				r, inspectErr := gitengine.Inspect(ctx, repo.Path)
+				networkSucceeded = true
+				stage = "refresh"
+				r, inspectErr := s.inspectRepository(ctx, repo.Path)
 				if inspectErr != nil {
-					err = fmt.Errorf("获取完成，但刷新仓库信息失败：%v", inspectErr)
+					err = inspectErr
 				} else {
 					refreshed = &r
 				}
 			}
 		}
 		s.mu.Lock()
+		result := taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "success", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), NetworkSucceeded: networkSucceeded, Failure: taskresult.Wrap(err, stage)}
 		if ctx.Err() != nil {
+			result.Status = "cancelled"
+			result.Failure = taskresult.Wrap(ctx.Err(), stage)
+			s.recordResultLocked(result)
 			s.updateRepoLocked(repo.Path, "cancelled", "任务已取消", nil)
 			s.mu.Unlock()
 			break
@@ -258,21 +294,40 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository) {
 		s.state.Completed++
 		switch {
 		case len(repo.Remotes) == 0:
+			result.Status = "skipped"
+			result.Attempts = 0
+			result.Stage = "fetch"
 			s.state.Skipped++
 			s.updateRepoLocked(repo.Path, "skipped", "未配置远端", nil)
 			s.logLocked("warn", repo.Name+"：未配置远端，已跳过")
 		case err != nil:
+			result.Status = "error"
 			s.state.Failed++
-			s.updateRepoLocked(repo.Path, "error", err.Error(), nil)
-			s.logLocked("error", repo.Name+"："+err.Error())
+			status := "error"
+			if networkSucceeded {
+				status = "refresh-error"
+			}
+			s.updateRepoLocked(repo.Path, status, result.Failure.Error(), nil)
+			s.logLocked("error", repo.Name+"："+result.Failure.Error())
 		default:
 			s.state.Succeeded++
 			s.updateRepoLocked(repo.Path, "success", refreshed.Error, refreshed)
 			s.logLocked("success", repo.Name+"：远端更新已获取")
 		}
+		s.recordResultLocked(result)
 		s.mu.Unlock()
 	}
 	s.finish(ctx, nil)
+}
+
+func (s *GitService) recordResultLocked(result taskresult.Result) {
+	for i := range s.state.Results {
+		if s.state.Results[i].Path == result.Path {
+			s.state.Results[i] = result
+			return
+		}
+	}
+	s.state.Results = append(s.state.Results, result)
 }
 
 func (s *GitService) finish(ctx context.Context, err error) {
@@ -296,6 +351,13 @@ func (s *GitService) finish(ctx context.Context, err error) {
 	s.state.FinishedAt = time.Now().Format(time.RFC3339)
 	switch {
 	case ctx.Err() != nil:
+		for i := range s.state.Results {
+			if s.state.Results[i].Status == "queued" {
+				s.state.Results[i].Status = "cancelled"
+				s.state.Results[i].FinishedAt = time.Now().Format(time.RFC3339Nano)
+				s.state.Results[i].Failure = taskresult.Wrap(ctx.Err(), "queued")
+			}
+		}
 		s.state.Phase = "cancelled"
 		s.logLocked("warn", "任务已取消，已完成的结果仍然保留")
 	case err != nil:

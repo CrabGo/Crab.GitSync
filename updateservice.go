@@ -7,24 +7,26 @@ import (
 	"sync"
 	"time"
 
+	"crab.gitsync/internal/taskresult"
 	"crab.gitsync/internal/updatefeed"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 type UpdateState struct {
-	Version       string `json:"version"`
-	Repository    string `json:"repository"`
-	Platform      string `json:"platform"`
-	Phase         string `json:"phase"`
-	Busy          bool   `json:"busy"`
-	LatestVersion string `json:"latestVersion"`
-	Notes         string `json:"notes"`
-	Written       int64  `json:"written"`
-	Total         int64  `json:"total"`
-	AuthSource    string `json:"authSource"`
-	CheckedAt     string `json:"checkedAt"`
-	Error         string `json:"error"`
+	Failure       *taskresult.Failure `json:"failure"`
+	Version       string              `json:"version"`
+	Repository    string              `json:"repository"`
+	Platform      string              `json:"platform"`
+	Phase         string              `json:"phase"`
+	Busy          bool                `json:"busy"`
+	LatestVersion string              `json:"latestVersion"`
+	Notes         string              `json:"notes"`
+	Written       int64               `json:"written"`
+	Total         int64               `json:"total"`
+	AuthSource    string              `json:"authSource"`
+	CheckedAt     string              `json:"checkedAt"`
+	Error         string              `json:"error"`
 }
 
 // UpdateService presents the Wails updater through the application's own UI.
@@ -77,7 +79,16 @@ func (s *UpdateService) attach(app *application.App) {
 }
 
 // GetState contains status only; it never includes the token used for requests.
-func (s *UpdateService) GetState() UpdateState { s.mu.Lock(); defer s.mu.Unlock(); return s.state }
+func (s *UpdateService) GetState() UpdateState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copy := s.state
+	if copy.Failure != nil {
+		f := *copy.Failure
+		copy.Failure = &f
+	}
+	return copy
+}
 
 func (s *UpdateService) log(level, message string) {
 	s.git.mu.Lock()
@@ -95,6 +106,7 @@ func (s *UpdateService) StartCheck() error {
 	ctx, cancel := context.WithTimeout(s.ctx, 45*time.Second)
 	s.cancel = cancel
 	s.state.Busy, s.state.Phase, s.state.Error = true, "checking", ""
+	s.state.Failure = nil
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
@@ -135,6 +147,7 @@ func (s *UpdateService) StartDownload() error {
 	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
 	s.cancel = cancel
 	s.state.Busy, s.state.Phase, s.state.Error = true, "downloading", ""
+	s.state.Failure = nil
 	s.state.Written = 0
 	s.mu.Unlock()
 	go func() { defer cancel(); err := s.app.Updater.DownloadAndInstall(ctx); s.finish(ctx, "ready", err) }()
@@ -144,11 +157,16 @@ func (s *UpdateService) StartDownload() error {
 func (s *UpdateService) finish(ctx context.Context, phase string, err error) {
 	s.mu.Lock()
 	s.state.Busy = false
+	stage := "update-check"
+	if phase == "ready" {
+		stage = "update-install"
+	}
+	s.state.Failure = taskresult.Wrap(err, stage)
 	if err != nil {
 		s.state.Phase = "error"
 		s.state.Error = "更新失败，请检查网络、代理以及发布文件后重试"
 		if phase == "up-to-date" || phase == "available" {
-			s.state.Error = err.Error()
+			s.state.Error = s.state.Failure.Error()
 		}
 		if ctx.Err() == context.Canceled {
 			s.state.Phase = "cancelled"

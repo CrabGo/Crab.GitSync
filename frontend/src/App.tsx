@@ -3,12 +3,13 @@ import { GitService, UpdateService, DesktopService } from '../bindings/crab.gits
 import type { State, UpdateState } from '../bindings/crab.gitsync/models'
 import UpdatePanel from './UpdatePanel'
 import NetworkPanel from './NetworkPanel'
+import TaskResults from './TaskResults'
 import RepositoryActions from './RepositoryActions'
 import type { RepositoryMenu } from './RepositoryActions'
 import type { Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
 import './App.css'
 
-const initial: State = { busy: false, kind: '', phase: 'idle', root: '', current: '', visited: 0, completed: 0, total: 0, succeeded: 0, failed: 0, skipped: 0, startedAt: '', finishedAt: '', repositories: [], logs: [] }
+const initial: State = { taskID:'',results:[],busy: false, kind: '', phase: 'idle', root: '', current: '', visited: 0, completed: 0, total: 0, succeeded: 0, failed: 0, skipped: 0, startedAt: '', finishedAt: '', repositories: [], logs: [] }
 const phases: Record<string, string> = { idle: '等待扫描', discovering: '正在发现仓库', inspecting: '正在读取仓库信息', fetching: '正在获取远端更新', operating: '正在执行仓库操作', done: '任务已完成', cancelled: '任务已取消', error: '任务失败' }
 const levels: Record<string, string> = { info: '信息', success: '成功', warn: '警告', error: '错误' }
 function Icon({ name, size = 18 }: { name: string, size?: number }) {
@@ -29,6 +30,7 @@ function Icon({ name, size = 18 }: { name: string, size?: number }) {
 }
 function remoteOf(repo: Repository) { return repo.remotes?.find(r => r.name === 'origin') || repo.remotes?.[0] }
 function statusOf(repo: Repository): [string, string] {
+  if (repo.fetchStatus === 'refresh-error') return ['操作完成，状态读取失败','amber']
   if (repo.mergeInProgress) return ['合并未完成', 'amber']
   if (repo.fetchStatus === 'fetching') return ['正在获取', 'blue']
   if (repo.fetchStatus === 'error') return ['操作失败', 'red']
@@ -49,7 +51,7 @@ function currentPage(): Page { const value = window.location.hash.slice(1); retu
 function readHistory(): string[] { try { const value = JSON.parse(localStorage.getItem('crab.scanHistory') || '[]'); return Array.isArray(value) ? value.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20) : [] } catch { return [] } }
 function App() {
   const [state, setState] = useState<State>(initial)
-  const [update, setUpdate] = useState<UpdateState>({version:'',repository:'',platform:'',phase:'idle',busy:false,latestVersion:'',notes:'',written:0,total:0,authSource:'',checkedAt:'',error:''})
+  const [update, setUpdate] = useState<UpdateState>({failure:null,version:'',repository:'',platform:'',phase:'idle',busy:false,latestVersion:'',notes:'',written:0,total:0,authSource:'',checkedAt:'',error:''})
   const [page,setPage] = useState<Page>(currentPage)
   const [history,setHistory] = useState<string[]>(readHistory)
   const [path, setPath] = useState(() => localStorage.getItem('crab.scanPath') || '')
@@ -131,6 +133,7 @@ function App() {
       {page === 'settings' && <NetworkPanel connected={connected}/>}
       {page === 'help' && <section className="help-panel"><strong>如何使用</strong><p>选择或输入一个目录，递归扫描其中的仓库。勾选仓库后点击「获取远端更新」，对各仓库的全部远端执行 fetch。认证使用本机 Git 配置，需提前完成 SSH 或凭据配置。</p><p>批量获取及右键「拉取」仅执行 fetch。右键「合并」「拉取并合并」会修改工作区，执行前需要确认目标。撤销本地修改只恢复已跟踪文件，保留新增文件与本地提交。扫描跳过 .git、node_modules、.venv，不跟随子目录符号链接。领先／落后数基于本地跟踪分支，fetch 后刷新。日志保留最近 500 条。</p><p>路径会记住上次选择，历史路径下拉保留最近 20 个目录。切换菜单不会中断正在进行的任务。</p><p>关闭窗口后应用继续在托盘运行。单击托盘恢复窗口，右键打开菜单，可取消任务或退出。任务完成和发现更新时会发送系统通知；点击通知可打开对应页面。</p><p>应用启动时及每 6 小时检查 GitHub Releases。公开仓库更新无需登录或配置令牌。下载完成后校验 SHA-256，点击重启安装。</p></section>}
       {error && <div className="error-banner" role="alert"><Icon name="info"/><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
+      {page === 'logs' && <TaskResults results={state.results || []} taskID={state.taskID}/>}
       {page === 'workspace' && <>
       <section className="scan-panel" aria-labelledby="scan-heading">
         <div className="section-label"><Icon name="folder"/><h2 id="scan-heading">扫描路径</h2><span>包含子目录</span></div>

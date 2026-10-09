@@ -2,6 +2,7 @@ package updatefeed
 
 import (
 	"context"
+	"crab.gitsync/internal/taskresult"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -37,11 +38,11 @@ func (p *PublicGitHub) request(ctx context.Context, method, endpoint string) (*h
 	req.Header.Set("User-Agent", "Crab.GitSync-Updater")
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("无法连接公开发布源，请检查网络或代理")
+		return nil, taskresult.Wrap(err, "update-request")
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("公开发布源返回 HTTP %d，请检查发布文件或网络", resp.StatusCode)
+		return nil, taskresult.Wrap(taskresult.HTTPStatus(resp.StatusCode), "update-request")
 	}
 	return resp, nil
 }

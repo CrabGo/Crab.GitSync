@@ -18,7 +18,8 @@ export default function UpdatePanel({ state, gitBusy, connected, onChange }: { s
     <div className="update-top"><div><h2 id="update-heading">应用更新 <span className="tag blue">v{state.version || '…'}</span></h2><p>从 GitHub Releases 获取新版 · 启动时与每 6 小时自动检查</p></div><button disabled={!connected || state.busy || pending || state.phase==='ready'} onClick={()=>void act(()=>UpdateService.StartCheck())}>检查更新</button></div>
     <div className="update-status" role="status"><strong>{labels[state.phase] || state.phase}{state.latestVersion && ` · v${state.latestVersion}`}</strong><span>{state.platform}{state.authSource && ` · ${state.authSource}`}</span></div>
     {['downloading','verifying','installing','ready'].includes(state.phase) && <><div className="progress-track" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div style={{width:`${percent}%`}}/></div><p className="update-size">{mb(state.written)} / {mb(state.total)}{state.phase==='ready' && ' · SHA-256 校验通过'}</p></>}
-    {(error || state.error) && <p className="update-error" role="alert">{error || state.error}</p>}
+    {(error || state.error) && <p className="update-error" role="alert">{error || state.failure?.message || state.error}</p>}
+    {!error && state.failure && <details className="release-notes"><summary>错误详情</summary><p>{state.failure.detail}</p></details>}
     {state.notes && <details className="release-notes"><summary>查看版本说明</summary><p>{state.notes}</p></details>}
     <div className="update-actions">
       {state.latestVersion && !state.busy && state.phase!=='ready' && <button className="primary" disabled={!connected || pending} onClick={()=>void act(()=>UpdateService.StartDownload())}>下载更新</button>}

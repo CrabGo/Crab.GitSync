@@ -3,6 +3,7 @@ package gitengine
 
 import (
 	"context"
+	"crab.gitsync/internal/taskresult"
 	"fmt"
 	"net/url"
 	"os"
@@ -64,7 +65,11 @@ func Run(ctx context.Context, path string, timeout time.Duration, args ...string
 		return "", ctx.Err()
 	}
 	if err != nil {
-		return "", fmt.Errorf("git %s: %s", args[0], Redact(strings.TrimSpace(string(out))))
+		detail := strings.TrimSpace(string(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return "", taskresult.Wrap(fmt.Errorf("git %s: %s", args[0], Redact(detail)), "git")
 	}
 	return strings.TrimSpace(string(out)), nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crab.gitsync/internal/gitengine"
+	"crab.gitsync/internal/taskresult"
 	"fmt"
 	"time"
 )
@@ -57,6 +58,7 @@ func (s *GitService) StartAction(path, action, target string, confirmed bool) er
 	s.updateRepoLocked(path, "operating", "", nil)
 	s.logLocked("info", fmt.Sprintf("%s：%s · 当前分支 %s · 目标 %s", label, repo.Path, repo.Branch, target))
 	go func() {
+		started := time.Now()
 		output, actionErr := gitengine.Action(ctx, path, action, target, repo.Branch)
 		// Refresh even after failure/cancellation: conflicts and partial changes must be visible.
 		refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -70,13 +72,35 @@ func (s *GitService) StartAction(path, action, target string, confirmed bool) er
 			s.logLocked("warn", "刷新仓库状态失败："+refreshErr.Error())
 		}
 		s.state.Completed = 1
+		result := taskresult.Result{TaskID: s.state.TaskID, Kind: action, Path: path, Branch: repo.Branch, Stage: "action", Status: "success", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), Failure: taskresult.Wrap(actionErr, "action")}
+		if actionErr == nil && refreshErr != nil {
+			result.Stage = "refresh"
+			result.Status = "error"
+			result.Failure = taskresult.Wrap(refreshErr, "refresh")
+		}
 		if actionErr != nil {
+			result.Status = "error"
+		}
+		if ctx.Err() != nil {
+			result.Status = "cancelled"
+			result.Failure = taskresult.Wrap(ctx.Err(), "action")
+		}
+		s.recordResultLocked(result)
+		if ctx.Err() != nil {
+			s.updateRepoLocked(path, "cancelled", "任务已取消", snapshot)
+			s.logLocked("warn", label+"已取消，操作现场已保留")
+		} else if actionErr != nil {
 			s.state.Failed = 1
 			s.updateRepoLocked(path, "error", actionErr.Error(), snapshot)
 			s.logLocked("error", label+"失败："+actionErr.Error())
 		} else {
-			s.state.Succeeded = 1
-			s.updateRepoLocked(path, "action-success", "", snapshot)
+			if refreshErr != nil {
+				s.state.Failed = 1
+				s.updateRepoLocked(path, "refresh-error", taskresult.Wrap(refreshErr, "refresh").Error(), nil)
+			} else {
+				s.state.Succeeded = 1
+				s.updateRepoLocked(path, "action-success", "", snapshot)
+			}
 			s.logLocked("success", label+"完成："+output)
 		}
 		s.mu.Unlock()

@@ -4,6 +4,9 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as gitengine$0 from "./internal/gitengine/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as taskresult$0 from "./internal/taskresult/models.js";
 
 export interface LogEntry {
     "id": number;
@@ -13,6 +16,8 @@ export interface LogEntry {
 }
 
 export interface State {
+    "taskID": string;
+    "results": taskresult$0.Result[] | null;
     "busy": boolean;
     "kind": string;
     "phase": string;
@@ -31,6 +36,7 @@ export interface State {
 }
 
 export interface UpdateState {
+    "failure": taskresult$0.Failure | null;
     "version": string;
     "repository": string;
     "platform": string;
