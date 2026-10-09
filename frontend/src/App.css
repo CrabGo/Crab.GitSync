@@ -26,3 +26,5 @@
 .task-results select { max-width: 100%; }
 .task-results > details > pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .scan-list-controls input[type="number"] { width: 112px; padding: 8px; border: 1px solid #dbe2ea; border-radius: 7px; }
+
+.changelog-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; font: inherit; line-height: 1.7; }

@@ -20,12 +20,12 @@ export default function UpdatePanel({ state, gitBusy, connected, onChange }: { s
     {['downloading','verifying','installing','ready'].includes(state.phase) && <><div className="progress-track" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div style={{width:`${percent}%`}}/></div><p className="update-size">{mb(state.written)} / {mb(state.total)}{state.phase==='ready' && ' · SHA-256 校验通过'}</p></>}
     {(error || state.error) && <p className="update-error" role="alert">{error || state.failure?.message || state.error}</p>}
     {!error && state.failure && <details className="release-notes"><summary>错误详情</summary><p>{state.failure.detail}</p></details>}
-    {state.notes && <details className="release-notes"><summary>查看版本说明</summary><p>{state.notes}</p></details>}
+    {state.latestVersion && <details className="release-notes"><summary>查看 v{state.latestVersion} 更新日志</summary>{state.notes ? <pre className="changelog-text">{state.notes}</pre> : <p>该版本的说明文件暂不可用，可在对应版本发布页面查看；不影响下载及 SHA-256 校验。</p>}</details>}
     <div className="update-actions">
       {state.latestVersion && !state.busy && state.phase!=='ready' && <button className="primary" disabled={!connected || pending} onClick={()=>void act(()=>UpdateService.StartDownload())}>下载更新</button>}
       {state.phase==='ready' && <button className="primary" disabled={gitBusy || pending} onClick={()=>void act(()=>UpdateService.Restart())}>重启应用更新</button>}
       {state.busy && state.phase!=='restarting' && <button disabled={pending} onClick={()=>void act(()=>UpdateService.Cancel())}>取消更新任务</button>}
-      <button className="text-button" onClick={()=>void Browser.OpenURL('https://github.com/CrabGo/Crab.GitSync/releases')}>查看发布页面</button>
+      <button className="text-button" onClick={()=>void Browser.OpenURL(state.releaseURL || 'https://github.com/CrabGo/Crab.GitSync/releases')}>查看发布页面</button>
       <span>{gitBusy && state.phase==='ready' ? 'Git 任务完成后可重启更新' : state.phase==='ready' ? '重启后自动替换程序，保留扫描路径' : state.checkedAt ? `上次检查 ${new Date(state.checkedAt).toLocaleString('zh-CN')}` : '公开发布源，无需 GitHub 登录或令牌'}</span>
     </div>
   </section>

@@ -38,6 +38,7 @@ try {
     New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
     $artifact = Join-Path $releaseDirectory 'crab-gitsync-windows-amd64.exe'
     Copy-Item -LiteralPath 'bin/crab-gitsync.exe' -Destination $artifact -Force
+    Copy-Item -LiteralPath "releases/v$Version.md" -Destination (Join-Path $releaseDirectory 'CHANGELOG.md') -Force
     $digest = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
     "$digest  crab-gitsync-windows-amd64.exe" | Set-Content -LiteralPath (Join-Path $releaseDirectory 'SHA256SUMS') -Encoding ascii
     Write-Output "Release v$Version prepared in $releaseDirectory"

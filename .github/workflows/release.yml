@@ -49,6 +49,7 @@ jobs:
           path: |
             bin/release/crab-gitsync-windows-amd64.exe
             bin/release/SHA256SUMS
+            bin/release/CHANGELOG.md
           if-no-files-found: error
 
   release:
@@ -79,5 +80,6 @@ jobs:
           else
             gh release create "$RELEASE_TAG" --verify-tag --draft --title "Crab.GitSync $RELEASE_TAG" --notes-file "$notes"
           fi
-          gh release upload "$RELEASE_TAG" release/crab-gitsync-windows-amd64.exe release/SHA256SUMS --clobber
+          cmp "$notes" release/CHANGELOG.md
+          gh release upload "$RELEASE_TAG" release/crab-gitsync-windows-amd64.exe release/SHA256SUMS release/CHANGELOG.md --clobber
           gh release edit "$RELEASE_TAG" --notes-file "$notes" --draft=false --latest

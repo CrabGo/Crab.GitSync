@@ -46,6 +46,7 @@ export interface UpdateState {
     "busy": boolean;
     "latestVersion": string;
     "notes": string;
+    "releaseURL": string;
     "written": number;
     "total": number;
     "authSource": string;

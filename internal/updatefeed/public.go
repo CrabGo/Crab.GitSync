@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"golang.org/x/mod/semver"
@@ -107,7 +109,29 @@ func (p *PublicGitHub) Check(ctx context.Context, req updater.CheckRequest) (*up
 	if size < 0 {
 		size = 0
 	}
-	return &updater.Release{Version: strings.TrimPrefix(version, "v"), Notes: "版本说明请查看 GitHub 发布页面。", Artifact: updater.Artifact{Filename: filename, Platform: req.Platform, Arch: req.Arch, Size: size}, Verification: &updater.Verification{DigestAlgo: "sha256", Digest: digest}, Metadata: map[string]any{"download.url": assetURL}}, nil
+	// Notes are optional, bounded and pinned to the same tag as the executable.
+	// Older releases and unavailable notes must not invalidate a verified update.
+	notes := p.releaseNotes(ctx, downloadBase+"CHANGELOG.md")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &updater.Release{Version: strings.TrimPrefix(version, "v"), Notes: notes, Artifact: updater.Artifact{Filename: filename, Platform: req.Platform, Arch: req.Arch, Size: size}, Verification: &updater.Verification{DigestAlgo: "sha256", Digest: digest}, Metadata: map[string]any{"download.url": assetURL, "release.url": final}}, nil
+}
+
+func (p *PublicGitHub) releaseNotes(ctx context.Context, endpoint string) string {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	resp, err := p.request(ctx, http.MethodGet, endpoint)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	const limit = 64 * 1024
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil || len(data) > limit || !utf8.Valid(data) {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(string(data), "\ufeff"))
 }
 func (p *PublicGitHub) Download(ctx context.Context, release *updater.Release, dst io.Writer, progress func(int64, int64)) error {
 	endpoint, _ := release.Metadata["download.url"].(string)

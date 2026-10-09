@@ -58,7 +58,7 @@ function currentPage(): Page { const value = window.location.hash.slice(1); retu
 function readHistory(): string[] { try { const value = JSON.parse(localStorage.getItem('crab.scanHistory') || '[]'); return Array.isArray(value) ? value.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20) : [] } catch { return [] } }
 function App() {
   const [state, setState] = useState<State>(initial)
-  const [update, setUpdate] = useState<UpdateState>({failure:null,version:'',repository:'',platform:'',phase:'idle',busy:false,latestVersion:'',notes:'',written:0,total:0,authSource:'',checkedAt:'',error:''})
+  const [update, setUpdate] = useState<UpdateState>({failure:null,version:'',repository:'',platform:'',phase:'idle',busy:false,latestVersion:'',notes:'',releaseURL:'',written:0,total:0,authSource:'',checkedAt:'',error:''})
   const [page,setPage] = useState<Page>(currentPage)
   const [history,setHistory] = useState<string[]>(readHistory)
   const [path, setPath] = useState(() => localStorage.getItem('crab.scanPath') || '')

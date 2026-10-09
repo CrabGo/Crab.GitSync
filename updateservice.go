@@ -22,6 +22,7 @@ type UpdateState struct {
 	Busy          bool                `json:"busy"`
 	LatestVersion string              `json:"latestVersion"`
 	Notes         string              `json:"notes"`
+	ReleaseURL    string              `json:"releaseURL"`
 	Written       int64               `json:"written"`
 	Total         int64               `json:"total"`
 	AuthSource    string              `json:"authSource"`
@@ -120,10 +121,12 @@ func (s *UpdateService) StartCheck() error {
 		s.state.AuthSource = source
 		s.state.CheckedAt = time.Now().Format(time.RFC3339)
 		s.release = release
-		s.state.LatestVersion, s.state.Notes = "", ""
+		s.state.LatestVersion, s.state.Notes, s.state.ReleaseURL = "", "", ""
 		s.state.Total = 0
 		if release != nil {
 			s.state.LatestVersion, s.state.Notes = release.Version, release.Notes
+			// Construct the UI link from the validated version, never from notes.
+			s.state.ReleaseURL = "https://github.com/" + ReleaseRepository + "/releases/tag/v" + release.Version
 			s.state.Total = release.Artifact.Size
 		}
 		s.state.Written = 0
