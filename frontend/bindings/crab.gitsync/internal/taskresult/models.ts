@@ -13,6 +13,7 @@ export interface Failure {
 }
 
 export interface Result {
+    "remote": string;
     "taskID": string;
     "kind": string;
     "path": string;

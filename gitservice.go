@@ -50,36 +50,38 @@ type State struct {
 
 // GitService owns one cancellable task and exposes immutable snapshots to the UI.
 type GitService struct {
-	app               *application.App
-	mu                sync.Mutex
-	state             State
-	cancel            context.CancelFunc
-	logID             int
-	restarting        bool
-	notify            func(string, string, string)
-	proxyURL          func() string
-	fetchRepository   func(context.Context, string) error
-	inspectRepository func(context.Context, string) (gitengine.Repository, error)
-	fetchHistory      map[string][]taskresult.Result
-	fetchHistoryOrder []string
-	retryEnabled      func() bool
-	waitRetry         func(context.Context, time.Duration) error
-	fetchTimes        map[string]string
-	scanLists         *scansettings.Store
-	scanLoadError     error
-	scheduler         *taskqueue.Scheduler
-	taskSettings      *tasksettings.Store
-	taskSettingsError error
-	history           *taskhistory.Store
-	firstTaskLogID    int
-	schedules         map[string]ScheduleState
-	stopSchedules     context.CancelFunc
-	schedulesStopped  bool
-	scheduledNew      int
+	app                   *application.App
+	mu                    sync.Mutex
+	state                 State
+	cancel                context.CancelFunc
+	logID                 int
+	restarting            bool
+	notify                func(string, string, string)
+	proxyURL              func() string
+	fetchRepository       func(context.Context, string) error
+	fetchRemoteRepository func(context.Context, string, string) error
+	inspectRepository     func(context.Context, string) (gitengine.Repository, error)
+	fetchHistory          map[string][]taskresult.Result
+	fetchHistoryOrder     []string
+	retryEnabled          func() bool
+	waitRetry             func(context.Context, time.Duration) error
+	fetchTimes            map[string]string
+	scanLists             *scansettings.Store
+	scanLoadError         error
+	scheduler             *taskqueue.Scheduler
+	taskSettings          *tasksettings.Store
+	taskSettingsError     error
+	history               *taskhistory.Store
+	firstTaskLogID        int
+	schedules             map[string]ScheduleState
+	stopSchedules         context.CancelFunc
+	schedulesStopped      bool
+	scheduledNew          int
 }
 
 type autoRetryKey struct{}
 type concurrencyKey struct{}
+type fetchRemotesKey struct{}
 
 func waitRetry(ctx context.Context, delay time.Duration) error {
 	timer := time.NewTimer(delay)
@@ -93,7 +95,7 @@ func waitRetry(ctx context.Context, delay time.Duration) error {
 }
 
 func NewGitService() *GitService {
-	return &GitService{scheduler: taskqueue.New(), fetchTimes: map[string]string{}, waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
+	return &GitService{scheduler: taskqueue.New(), fetchTimes: map[string]string{}, waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, fetchRemoteRepository: gitengine.FetchRemote, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
 }
 
 // ChooseDirectory opens the native directory picker. An empty result means cancelled.
@@ -147,16 +149,18 @@ func (s *GitService) RetryFailed(taskID string) error {
 	}
 	paths := []string{}
 	refreshOnly := map[string]bool{}
+	remotes := map[string]string{}
 	for _, result := range results {
 		if result.Status == "error" {
 			paths = append(paths, result.Path)
+			remotes[scansettings.PathKey(result.Path)] = result.Remote
 			refreshOnly[result.Path] = result.NetworkSucceeded && result.Stage == "refresh"
 		}
 	}
 	if len(paths) == 0 {
 		return fmt.Errorf("该任务没有需要重试的失败仓库")
 	}
-	return s.startFetchLocked(paths, refreshOnly, taskID)
+	return s.startFetchSelectionsLocked(paths, refreshOnly, taskID, remotes)
 }
 
 func (s *GitService) logLocked(level, message string) {
@@ -296,6 +300,9 @@ func (s *GitService) StartFetch(paths []string) error {
 }
 
 func (s *GitService) startFetchLocked(paths []string, refreshOnly map[string]bool, sourceTaskID string) error {
+	return s.startFetchSelectionsLocked(paths, refreshOnly, sourceTaskID, nil)
+}
+func (s *GitService) startFetchSelectionsLocked(paths []string, refreshOnly map[string]bool, sourceTaskID string, remotes map[string]string) error {
 	selected := []gitengine.Repository{}
 	seen := map[string]bool{}
 	for _, path := range paths {
@@ -323,10 +330,11 @@ func (s *GitService) startFetchLocked(paths []string, refreshOnly map[string]boo
 	if err != nil {
 		return err
 	}
+	ctx = context.WithValue(ctx, fetchRemotesKey{}, remotes)
 	s.state.Total = len(selected)
 	s.state.SourceTaskID = sourceTaskID
 	for _, repo := range selected {
-		s.state.Results = append(s.state.Results, taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: "queued", Status: "queued"})
+		s.state.Results = append(s.state.Results, taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Remote: remotes[scansettings.PathKey(repo.Path)], Path: repo.Path, Branch: repo.Branch, Stage: "queued", Status: "queued"})
 	}
 	for i := range s.state.Repositories {
 		if seen[scansettings.PathKey(s.state.Repositories[i].Path)] {
@@ -372,6 +380,8 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 	return err
 }
 func (s *GitService) fetchOne(ctx context.Context, repo gitengine.Repository, refreshOnly bool) error {
+	remotes, _ := ctx.Value(fetchRemotesKey{}).(map[string]string)
+	remote := remotes[scansettings.PathKey(repo.Path)]
 	s.mu.Lock()
 	started := time.Now()
 	stage := "fetch"
@@ -379,7 +389,7 @@ func (s *GitService) fetchOne(ctx context.Context, repo gitengine.Repository, re
 		stage = "refresh"
 	}
 	s.state.Current = repo.Path
-	s.recordResultLocked(taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "running", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano)})
+	s.recordResultLocked(taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Remote: remote, Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "running", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano)})
 	s.updateRepoLocked(repo.Path, "fetching", "", nil)
 	if refreshOnly {
 		s.updateRepoLocked(repo.Path, "refreshing", "", nil)
@@ -398,7 +408,7 @@ func (s *GitService) fetchOne(ctx context.Context, repo gitengine.Repository, re
 		}
 		if err == nil {
 			networkSucceeded = true
-			if !refreshOnly {
+			if !refreshOnly && remote == "" {
 				s.mu.Lock()
 				s.fetchTimes[scansettings.PathKey(repo.Path)] = time.Now().Format(time.RFC3339Nano)
 				s.mu.Unlock()
@@ -421,7 +431,7 @@ func (s *GitService) fetchOne(ctx context.Context, repo gitengine.Repository, re
 		}
 	}
 	s.mu.Lock()
-	result := taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "success", Attempts: attempts, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), NetworkSucceeded: networkSucceeded, Failure: taskresult.Wrap(err, stage)}
+	result := taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Remote: remote, Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "success", Attempts: attempts, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), NetworkSucceeded: networkSucceeded, Failure: taskresult.Wrap(err, stage)}
 	if ctx.Err() != nil {
 		result.Status = "cancelled"
 		result.Failure = taskresult.Wrap(ctx.Err(), stage)
@@ -466,7 +476,14 @@ func (s *GitService) fetchOne(ctx context.Context, repo gitengine.Repository, re
 func (s *GitService) fetchWithRetry(ctx context.Context, path string) (error, int) {
 	enabled, _ := ctx.Value(autoRetryKey{}).(bool)
 	for attempt := 1; ; attempt++ {
-		err := s.fetchRepository(ctx, path)
+		remotes, _ := ctx.Value(fetchRemotesKey{}).(map[string]string)
+		remote := remotes[scansettings.PathKey(path)]
+		var err error
+		if remote == "" {
+			err = s.fetchRepository(ctx, path)
+		} else {
+			err = s.fetchRemoteRepository(ctx, path, remote)
+		}
 		failure := taskresult.Wrap(err, "fetch")
 		if err == nil || !enabled || attempt == 3 || ctx.Err() != nil || !retryableNetwork(failure) {
 			return err, attempt

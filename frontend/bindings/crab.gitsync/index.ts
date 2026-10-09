@@ -14,6 +14,7 @@ export {
 
 export type {
     LogEntry,
+    RepositoryLink,
     ScheduleState,
     State,
     UpdateState

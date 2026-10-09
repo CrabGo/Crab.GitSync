@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { GitService } from '../bindings/crab.gitsync'
+import { Browser, Clipboard } from '@wailsio/runtime'
 import type { MergePreview, Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
 
 export type RepositoryMenu = { repo: Repository, x: number, y: number }
@@ -16,6 +17,8 @@ export default function RepositoryActions({ target, busy, close, run }: {target:
   const [pending,setPending] = useState(false)
   const [confirmed,setConfirmed] = useState(false)
   const [error,setError] = useState('')
+  const [fetchRemote,setFetchRemote]=useState('')
+  const [message,setMessage]=useState('')
   const panel = useRef<HTMLDivElement>(null)
   const first = useRef<HTMLButtonElement>(null)
   const {repo} = target
@@ -56,12 +59,23 @@ export default function RepositoryActions({ target, busy, close, run }: {target:
   const merging=['merge','pull-merge'].includes(action)
   const execute = async (chosen:string) => {
     setPending(true);setError('')
-    try {await run(chosen,branch,merging ? preview || undefined : undefined,strategy);close()} catch(e) {setError(String(e))} finally {setPending(false)}
+    try {await run(chosen,chosen==='fetch'?fetchRemote:branch,merging ? preview || undefined : undefined,strategy);close()} catch(e) {setError(String(e))} finally {setPending(false)}
   }
-  if (!action) return <div ref={panel} className="repository-menu" role="menu" aria-label={`${repo.name} 仓库操作`} style={{left:Math.max(8,Math.min(target.x,window.innerWidth-235)),top:Math.max(8,Math.min(target.y,window.innerHeight-300))}}>
+  const shortcut=async(kind:string)=>{
+    setPending(true);setError('');setMessage('')
+    try{
+      if(kind==='folder'||kind==='terminal')await GitService.OpenRepository(repo.path,kind)
+      else {const links=await GitService.GetRepositoryLinks(repo.path)||[];const selected=links.find(value=>value.name===fetchRemote)||links.find(value=>value.name==='origin')||links[0];if(!selected)throw new Error('此仓库未配置远端');if(kind==='github'){if(!selected.githubURL)throw new Error('所选远端不是有效的 GitHub 仓库');await Browser.OpenURL(selected.githubURL)}else{await Clipboard.SetText(selected.address);setMessage(`已复制 ${selected.name} 的脱敏远端地址`)}}
+    }catch(e){setError(String(e))}finally{setPending(false)}
+  }
+  if (!action) return <div ref={panel} className="repository-menu" role="menu" aria-label={`${repo.name} 仓库操作`} style={{left:Math.max(8,Math.min(target.x,window.innerWidth-235)),top:Math.max(8,Math.min(target.y,window.innerHeight-560)),maxHeight:'calc(100vh - 16px)',overflowY:'auto'}}>
     <div className="repository-menu-title">{repo.name}<small>{repo.branch}</small></div>
+    <label>获取远端<select aria-label="拉取远端" disabled={busy||pending} value={fetchRemote} onChange={e=>setFetchRemote(e.target.value)}><option value="">全部远端（默认）</option>{repo.remotes?.map(remote=><option value={remote.name} key={remote.name}>{remote.name}</option>)}</select></label>
     {Object.entries(labels).map(([value,label],index) => <button ref={index===0 ? first : undefined} role="menuitem" key={value} className={value==='discard' ? 'destructive' : ''} disabled={busy || (value==='fetch' ? !repo.remotes?.length : repo.bare || repo.detached) || (value==='pull-merge' && !repo.upstream) || (value==='abort-merge' ? !repo.mergeInProgress : value!=='fetch' && repo.mergeInProgress)} onClick={() => {if (value==='fetch') void execute(value);else {setAction(value);setStrategy('ff-only');setConfirmed(false);setError('')}}}>{label}{value==='fetch' && <small>仅获取远端更新</small>}</button>)}
     {error && <p role="alert">{error}</p>}
+    {['folder','terminal','github','copy'].map(kind=><button role="menuitem" key={kind} disabled={busy||pending} onClick={()=>void shortcut(kind)}>{{folder:'打开仓库目录',terminal:'在此打开终端',github:'打开 GitHub 页面',copy:'复制远端地址'}[kind]}</button>)}
+    <small>页面和复制使用所选远端；全部远端时优先 origin。</small>
+    {message&&<p role="status">{message}</p>}
   </div>
   return <div className="dialog-overlay"><div ref={panel} className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-title">
     <h2 id="action-title">{labels[action]}</h2><p className="action-repository"><strong>{repo.name}</strong><span>{repo.path}</span></p>

@@ -248,3 +248,28 @@ func Fetch(ctx context.Context, path string) error {
 	_, err := Run(ctx, path, 2*time.Minute, "fetch", "--all", "--no-recurse-submodules")
 	return err
 }
+
+// FetchRemote validates the configured name again and keeps it behind Git's option separator.
+func FetchRemote(ctx context.Context, path, remote string) error {
+	if remote == "" {
+		return Fetch(ctx, path)
+	}
+	if strings.HasPrefix(remote, "-") || strings.ContainsAny(remote, "\r\n\x00") {
+		return fmt.Errorf("无效的远端名称")
+	}
+	names, err := Run(ctx, path, 15*time.Second, "remote")
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, name := range strings.Split(names, "\n") {
+		if name == remote {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("所选远端已不存在，请重新扫描")
+	}
+	_, err = Run(ctx, path, 2*time.Minute, "fetch", "--no-recurse-submodules", "--", remote)
+	return err
+}

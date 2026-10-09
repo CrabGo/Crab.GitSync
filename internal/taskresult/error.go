@@ -109,6 +109,7 @@ func Wrap(err error, stage string) *Failure {
 func HTTPStatus(status int) error { return fmt.Errorf("HTTP %d", status) }
 
 type Result struct {
+	Remote           string   `json:"remote"`
 	TaskID           string   `json:"taskID"`
 	Kind             string   `json:"kind"`
 	Path             string   `json:"path"`

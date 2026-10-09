@@ -15,6 +15,12 @@ export interface LogEntry {
     "message": string;
 }
 
+export interface RepositoryLink {
+    "name": string;
+    "address": string;
+    "githubURL": string;
+}
+
 export interface ScheduleState {
     "listID": string;
     "nextRun": string;

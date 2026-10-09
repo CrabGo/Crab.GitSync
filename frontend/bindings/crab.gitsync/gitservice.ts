@@ -59,6 +59,10 @@ export function GetHistoryWarning(): $CancellablePromise<string> {
     return $Call.ByID(1810016235);
 }
 
+export function GetRepositoryLinks(path: string): $CancellablePromise<$models.RepositoryLink[] | null> {
+    return $Call.ByID(205461812, path);
+}
+
 export function GetScanLists(): $CancellablePromise<scansettings$0.List[] | null> {
     return $Call.ByID(1918790747);
 }
@@ -84,6 +88,10 @@ export function GetTaskHistory(id: string): $CancellablePromise<taskhistory$0.Re
 
 export function ListTaskHistory(): $CancellablePromise<taskhistory$0.Summary[] | null> {
     return $Call.ByID(3180995000);
+}
+
+export function OpenRepository(path: string, kind: string): $CancellablePromise<void> {
+    return $Call.ByID(2099263449, path, kind);
 }
 
 /**
@@ -124,6 +132,10 @@ export function StartAction(path: string, action: string, target: string, confir
  */
 export function StartFetch(paths: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(580180265, paths);
+}
+
+export function StartFetchRemote(path: string, remote: string): $CancellablePromise<void> {
+    return $Call.ByID(3514122335, path, remote);
 }
 
 export function StartMerge(preview: gitengine$0.MergePreview, strategy: string, confirmed: boolean): $CancellablePromise<void> {
