@@ -70,7 +70,11 @@ func TestMergeValidationAndConflictRecovery(t *testing.T) {
 		t.Fatal("dirty worktree accepted")
 	}
 	os.Remove(filepath.Join(path, "untracked.txt"))
-	if _, err := Action(context.Background(), path, "merge", "refs/heads/feature"); err == nil {
+	preview, err := PreviewMerge(context.Background(), path, "merge", "refs/heads/feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ExecuteMerge(context.Background(), preview, "merge"); err == nil {
 		t.Fatal("conflicting merge succeeded")
 	}
 	if git(t, path, "rev-parse", "--verify", "MERGE_HEAD") == "" {

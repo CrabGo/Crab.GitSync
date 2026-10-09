@@ -31,8 +31,48 @@ func (s *GitService) GetBranches(path string) ([]string, error) {
 	return gitengine.Branches(ctx, path)
 }
 
+// PreviewMerge is read-only and validates the current scanned scope.
+func (s *GitService) PreviewMerge(path, action, target string) (gitengine.MergePreview, error) {
+	s.mu.Lock()
+	repo, err := s.scannedRepository(path)
+	if err == nil && (s.state.Busy || s.restarting) {
+		err = fmt.Errorf("已有任务正在运行，请稍后预览")
+	}
+	s.mu.Unlock()
+	if err != nil {
+		return gitengine.MergePreview{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	preview, err := gitengine.PreviewMerge(ctx, path, action, target)
+	if err == nil && preview.Branch != repo.Branch {
+		err = fmt.Errorf("当前分支已变化，请重新扫描")
+	}
+	return preview, err
+}
+
+func (s *GitService) StartMerge(preview gitengine.MergePreview, strategy string, confirmed bool) error {
+	if !confirmed {
+		return fmt.Errorf("请先确认合并目标与影响")
+	}
+	if preview.Action != "merge" && preview.Action != "pull-merge" {
+		return fmt.Errorf("未知合并操作")
+	}
+	if strategy != "ff-only" && strategy != "merge" {
+		return fmt.Errorf("未知合并策略")
+	}
+	return s.startAction(preview.Path, preview.Action, preview.Target, true, &preview, strategy)
+}
+
 // StartAction executes only an explicit single-repository action selected in the UI.
 func (s *GitService) StartAction(path, action, target string, confirmed bool) error {
+	if action == "merge" || action == "pull-merge" {
+		return fmt.Errorf("请先预览合并关系并确认策略")
+	}
+	return s.startAction(path, action, target, confirmed, nil, "")
+}
+
+func (s *GitService) startAction(path, action, target string, confirmed bool, preview *gitengine.MergePreview, strategy string) error {
 	if action == "fetch" {
 		return s.StartFetch([]string{path})
 	}
@@ -59,7 +99,23 @@ func (s *GitService) StartAction(path, action, target string, confirmed bool) er
 	s.logLocked("info", fmt.Sprintf("%s：%s · 当前分支 %s · 目标 %s", label, repo.Path, repo.Branch, target))
 	go func() {
 		started := time.Now()
-		output, actionErr := gitengine.Action(ctx, path, action, target, repo.Branch)
+		var output string
+		var actionErr error
+		if preview != nil {
+			if preview.Branch != repo.Branch {
+				actionErr = fmt.Errorf("当前分支已变化，请重新预览")
+			} else {
+				var fetched bool
+				output, fetched, actionErr = gitengine.ExecuteMerge(ctx, *preview, strategy)
+				if fetched {
+					s.mu.Lock()
+					s.fetchTimes[path] = time.Now().Format(time.RFC3339Nano)
+					s.mu.Unlock()
+				}
+			}
+		} else {
+			output, actionErr = gitengine.Action(ctx, path, action, target, repo.Branch)
+		}
 		// Refresh even after failure/cancellation: conflicts and partial changes must be visible.
 		refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		refreshed, refreshErr := gitengine.Inspect(refreshCtx, path)

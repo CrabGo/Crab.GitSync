@@ -94,7 +94,7 @@ func Wrap(err error, stage string) *Failure {
 		f.Category = "refresh"
 		f.Message = "操作已完成，但读取仓库状态失败"
 		f.Retryable = false
-	case strings.Contains(s, "工作区") || strings.Contains(s, "跟踪分支") || strings.Contains(s, "合并未完成") || strings.Contains(s, "正在合并") || strings.Contains(s, "当前分支已变化") || strings.Contains(s, "请选择其他有效"):
+	case strings.Contains(s, "工作区") || strings.Contains(s, "跟踪分支") || strings.Contains(s, "合并未完成") || strings.Contains(s, "正在合并") || strings.Contains(s, "当前分支已变化") || strings.Contains(s, "请选择其他有效") || strings.Contains(s, "预览") || strings.Contains(s, "双方分叉") || strings.Contains(s, "本地分支") || strings.Contains(s, "没有跟踪分支"):
 		f.Category = "git_state"
 		f.Message = "仓库状态不允许操作，请检查分支、工作区或冲突"
 	}

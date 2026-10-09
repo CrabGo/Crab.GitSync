@@ -8,3 +8,7 @@
 .diagnosis-panel{border-top:1px solid #e2e8f0;margin-top:26px;padding-top:20px}.diagnosis-panel h3{font-size:15px;margin:0}.diagnosis-remote{display:flex;flex-direction:column;gap:9px;font-size:13px;color:#64748b;margin:16px 0}.diagnosis-remote input{height:40px;padding:8px 12px;border:1px solid #dce2ea;border-radius:8px;background:white;color:#1e293b;font:inherit}
 
 .retry-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+
+.merge-preview { padding: 12px; background: #f4f7fc; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.merge-preview p { margin: 6px 0; }
+.merge-preview small { display: block; color: #69758a; }

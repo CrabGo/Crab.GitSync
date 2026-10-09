@@ -12,6 +12,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as gitengine$0 from "./internal/gitengine/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as taskresult$0 from "./internal/taskresult/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -51,6 +54,13 @@ export function GetState(): $CancellablePromise<$models.State> {
 }
 
 /**
+ * PreviewMerge is read-only and validates the current scanned scope.
+ */
+export function PreviewMerge(path: string, action: string, target: string): $CancellablePromise<gitengine$0.MergePreview> {
+    return $Call.ByID(2310478365, path, action, target);
+}
+
+/**
  * RetryFailed retries errors only. A successful fetch with a failed refresh never fetches again.
  */
 export function RetryFailed(taskID: string): $CancellablePromise<void> {
@@ -69,6 +79,10 @@ export function StartAction(path: string, action: string, target: string, confir
  */
 export function StartFetch(paths: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(580180265, paths);
+}
+
+export function StartMerge(preview: gitengine$0.MergePreview, strategy: string, confirmed: boolean): $CancellablePromise<void> {
+    return $Call.ByID(4042492005, preview, strategy, confirmed);
 }
 
 /**

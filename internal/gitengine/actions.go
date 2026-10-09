@@ -93,42 +93,16 @@ func Action(ctx context.Context, path, action, target string, expectedBranch ...
 		}
 		return "已撤销已跟踪文件的暂存与工作区修改；未跟踪文件、新增文件和本地提交均保留", nil
 	case "merge", "pull-merge":
-		if repo.Changed > 0 {
-			return "", fmt.Errorf("工作区或暂存区有修改，请先提交、暂存保存或撤销修改")
-		}
-		if action == "pull-merge" {
-			if repo.Upstream == "" {
-				return "", fmt.Errorf("当前分支没有跟踪分支，请先在 Git 中配置 upstream")
-			}
-			if err := Fetch(ctx, path); err != nil {
-				return "", err
-			}
-			target, err = Run(ctx, path, 15*time.Second, "rev-parse", "--symbolic-full-name", "@{upstream}")
-			if err != nil {
-				return "", err
-			}
-		}
-		refs, err := Branches(ctx, path)
+		preview, err := PreviewMerge(ctx, path, action, target)
 		if err != nil {
 			return "", err
 		}
-		valid := false
-		for _, ref := range refs {
-			if ref == target {
-				valid = true
-				break
-			}
+		if preview.Branch != repo.Branch {
+			return "", fmt.Errorf("当前分支已变化，请重新预览")
 		}
-		if !valid || target == "refs/heads/"+repo.Branch {
-			return "", fmt.Errorf("请选择其他有效的本地或远端分支")
-		}
-		out, err := Run(ctx, path, 2*time.Minute, "-c", "merge.autoStash=false", "merge", "--no-edit", "--no-overwrite-ignore", "--", target)
-		if err != nil {
-			if _, mergeErr := Run(ctx, path, 15*time.Second, "rev-parse", "--verify", "MERGE_HEAD"); mergeErr == nil {
-				return "", fmt.Errorf("合并未完成，已保留现场。请解决冲突后提交，或使用「中止合并」：%w", err)
-			}
-		}
+		out, _, err := ExecuteMerge(ctx, preview, "ff-only")
 		return out, err
+
 	default:
 		return "", fmt.Errorf("未知仓库操作")
 	}
