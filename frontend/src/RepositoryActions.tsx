@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { GitService } from '../bindings/crab.gitsync'
 import { Browser, Clipboard } from '@wailsio/runtime'
-import type { MergePreview, Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
+import type { DiscardBackup, DiscardPreview, MergePreview, Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
 
 export type RepositoryMenu = { repo: Repository, x: number, y: number }
-const labels: Record<string,string> = {fetch:'拉取',merge:'合并',discard:'撤销本地修改','pull-merge':'拉取并合并','abort-merge':'中止合并'}
+const labels: Record<string,string> = {fetch:'拉取',merge:'合并',discard:'撤销本地修改','restore-discard':'恢复撤销备份','pull-merge':'拉取并合并','abort-merge':'中止合并'}
 
-export default function RepositoryActions({ target, busy, close, run }: {target:RepositoryMenu,busy:boolean,close:()=>void,run:(action:string,branch:string,preview?:MergePreview,strategy?:string)=>Promise<void>}) {
+export default function RepositoryActions({ target, busy, close, run }: {target:RepositoryMenu,busy:boolean,close:()=>void,run:(action:string,branch:string,preview?:MergePreview,strategy?:string,operation?:()=>Promise<void>)=>Promise<void>}) {
   const [action,setAction] = useState('')
   const [branches,setBranches] = useState<string[]>([])
   const [branch,setBranch] = useState('')
@@ -19,6 +19,11 @@ export default function RepositoryActions({ target, busy, close, run }: {target:
   const [error,setError] = useState('')
   const [fetchRemote,setFetchRemote]=useState('')
   const [message,setMessage]=useState('')
+  const [discardPreview,setDiscardPreview]=useState<DiscardPreview|null>(null)
+  const [files,setFiles]=useState<string[]>([])
+  const [backup,setBackup]=useState(false)
+  const [backups,setBackups]=useState<DiscardBackup[]>([])
+  const [backupID,setBackupID]=useState('')
   const panel = useRef<HTMLDivElement>(null)
   const first = useRef<HTMLButtonElement>(null)
   const {repo} = target
@@ -56,10 +61,28 @@ export default function RepositoryActions({ target, busy, close, run }: {target:
     void GitService.PreviewMerge(repo.path,action,branch).then(value=>{if(!stopped)setPreview(value)}).catch(e=>{if(!stopped)setError(String(e))}).finally(()=>{if(!stopped)setPreviewLoading(false)})
     return()=>{stopped=true}
   },[action,branch,repo.path])
+  useEffect(()=>{
+    if(action!=='discard' && action!=='restore-discard')return
+    let stopped=false
+    setLoading(true);setError('');setFiles([]);setBackup(false);setDiscardPreview(null);setBackups([]);setBackupID('')
+    const load=async()=>{
+      if(action==='discard') {const p=await GitService.GetDiscardPreview(repo.path);if(!stopped)setDiscardPreview(p)}
+      else {const values=await GitService.GetDiscardBackups(repo.path)||[];if(!stopped)setBackups(values)}
+    }
+    void load().catch(e=>{if(!stopped)setError(String(e))}).finally(()=>{if(!stopped)setLoading(false)})
+    return()=>{stopped=true}
+  },[action,repo.path])
+  const selectedBackup=backups.find(value=>value.id===backupID)
+  const discardFiles=discardPreview?.files||[]
   const merging=['merge','pull-merge'].includes(action)
   const execute = async (chosen:string) => {
     setPending(true);setError('')
-    try {await run(chosen,chosen==='fetch'?fetchRemote:branch,merging ? preview || undefined : undefined,strategy);close()} catch(e) {setError(String(e))} finally {setPending(false)}
+    try {
+      let operation:(()=>Promise<void>)|undefined
+      if(chosen==='discard') {if(!discardPreview || !confirmed || !files.length)throw new Error('请选择文件并确认');operation=()=>GitService.StartDiscard(discardPreview,files,backup,true)}
+      if(chosen==='restore-discard') {if(!selectedBackup?.ready || !confirmed)throw new Error('请选择就绪备份并确认');operation=()=>GitService.StartRestoreDiscard(repo.path,backupID,true)}
+      await run(chosen,chosen==='fetch'?fetchRemote:branch,merging ? preview || undefined : undefined,strategy,operation);close()
+    } catch(e) {setError(String(e))} finally {setPending(false)}
   }
   const shortcut=async(kind:string)=>{
     setPending(true);setError('');setMessage('')
@@ -89,9 +112,28 @@ export default function RepositoryActions({ target, busy, close, run }: {target:
       <p className="action-impact">此操作会更新工作区。仅快进无法完成时停止，不自动暂存或变基；普通合并发生冲突时保留现场。</p>
       {strategy==='merge' && <label className="discard-confirm"><input type="checkbox" checked={confirmed} disabled={pending} onChange={e=>setConfirmed(e.target.checked)}/>我确认普通合并，允许生成合并提交并处理可能的冲突</label>}
     </>}
-    {action==='discard' && <><p className="action-impact destructive">已跟踪文件的暂存及工作区修改将被撤销，恢复到最近一次提交，无法通过此工具恢复。未跟踪文件、新增文件和本地提交会保留。</p><label className="discard-confirm"><input type="checkbox" checked={confirmed} disabled={pending} onChange={e => setConfirmed(e.target.checked)}/>我确认撤销此仓库已跟踪文件的本地修改</label></>}
+    {action==='discard' && <>
+      <p className="action-impact destructive">仅所选文件的暂存及工作区修改恢复到 HEAD。未选文件、新增/未跟踪文件和本地提交保留。未开启备份时，此工具无法恢复所选修改。</p>
+      {loading?<p role="status">正在读取受影响文件…</p>:<>
+        <p>可选 {discardFiles.length} 个文件 · 已选择 {files.length} 个</p>
+        {!discardFiles.length?<p>没有可撤销的已跟踪文件修改。</p>:<>
+          <button disabled={pending} onClick={()=>{setFiles(discardFiles.map(f=>f.path));setConfirmed(false)}}>全选</button>{' '}
+          <button disabled={pending} onClick={()=>{setFiles([]);setConfirmed(false)}}>清空选择</button>
+          <div className="discard-files" aria-label="撤销文件列表">{discardFiles.map(f=><label key={f.path}><input type="checkbox" checked={files.includes(f.path)} disabled={pending} onChange={e=>{setFiles(values=>e.target.checked?[...values,f.path]:values.filter(value=>value!==f.path));setConfirmed(false)}}/><span>{f.path}</span></label>)}</div>
+        </>}
+      </>}
+      <label className="discard-confirm"><input type="checkbox" checked={backup} disabled={pending} onChange={e=>{setBackup(e.target.checked);setConfirmed(false)}}/>撤销前保存本地备份（包含所选文件的工作区与暂存内容）</label>
+      <p>备份保存在应用配置目录，可从仓库菜单恢复。备份写入失败会停止撤销；恢复前若文件、分支或 HEAD 已变化，将拒绝覆盖。最多 500 个候选文件，所选备份内容合计不超过 64 MiB。</p>
+      <label className="discard-confirm"><input type="checkbox" checked={confirmed} disabled={pending||!files.length} onChange={e=>setConfirmed(e.target.checked)}/>我确认撤销所选 {files.length} 个文件的暂存及工作区修改</label>
+    </>}
+    {action==='restore-discard' && <>
+      {loading?<p role="status">正在读取本地备份…</p>:<label className="branch-picker">选择备份<select aria-label="撤销备份" disabled={pending} value={backupID} onChange={e=>{setBackupID(e.target.value);setConfirmed(false)}}><option value="">{backups.length?'请选择备份':'此仓库没有本地备份'}</option>{backups.map(value=><option key={value.id} value={value.id} disabled={!value.ready}>{new Date(value.createdAt).toLocaleString()} · {value.files?.length||0} 个文件{value.ready?'':' · 尚未就绪'}</option>)}</select></label>}
+      {selectedBackup&&<><p>备份：{selectedBackup.id}</p><ul className="discard-files">{(selectedBackup.files||[]).map(file=><li key={file}>{file}</li>)}</ul></>}
+      <p className="action-impact">恢复所列文件原来的工作区与暂存内容，保留其他文件。撤销后有新修改或分支/HEAD 改变时停止；原始备份持续保留。</p>
+      <label className="discard-confirm"><input type="checkbox" checked={confirmed} disabled={pending||!selectedBackup?.ready} onChange={e=>setConfirmed(e.target.checked)}/>我确认恢复所选备份中的文件</label>
+    </>}
     {action==='abort-merge' && <p className="action-impact">中止当前未完成的合并并尝试恢复合并前状态。解决冲突过程中产生的修改也会撤销。</p>}
     {error && <p className="text-red" role="alert">{error}</p>}
-    <div className="dialog-actions"><button ref={first} disabled={pending} onClick={close}>取消</button><button className={action==='discard' ? 'danger-button' : 'primary'} disabled={busy || pending || loading || (merging && (previewLoading || !preview || (strategy==='merge' && !confirmed) || (strategy==='ff-only' && preview.diverged))) || (action==='merge' && !branch) || (action==='discard' && !confirmed)} onClick={() => void execute(action)}>{pending ? '正在提交任务…' : `确认${labels[action]}`}</button></div>
+    <div className="dialog-actions"><button ref={first} disabled={pending} onClick={close}>取消</button><button className={action==='discard' ? 'danger-button' : 'primary'} disabled={busy || pending || loading || (merging && (previewLoading || !preview || (strategy==='merge' && !confirmed) || (strategy==='ff-only' && preview.diverged))) || (action==='merge' && !branch) || (action==='discard' && (!confirmed||!discardPreview||!files.length)) || (action==='restore-discard' && (!confirmed||!selectedBackup?.ready))} onClick={() => void execute(action)}>{pending ? '正在提交任务…' : `确认${labels[action]}`}</button></div>
   </div></div>
 }

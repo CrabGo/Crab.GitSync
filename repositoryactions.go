@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var actionLabels = map[string]string{"fetch": "拉取", "merge": "合并", "discard": "撤销本地修改", "pull-merge": "拉取并合并", "abort-merge": "中止合并"}
+var actionLabels = map[string]string{"fetch": "拉取", "merge": "合并", "discard": "撤销本地修改", "restore-discard": "恢复撤销备份", "pull-merge": "拉取并合并", "abort-merge": "中止合并"}
 
 func (s *GitService) scannedRepository(path string) (gitengine.Repository, error) {
 	for _, repo := range s.state.Repositories {
@@ -88,6 +88,23 @@ func (s *GitService) StartMerge(preview gitengine.MergePreview, strategy string,
 
 // StartAction executes only an explicit single-repository action selected in the UI.
 func (s *GitService) StartAction(path, action, target string, confirmed bool) error {
+	if action == "restore-discard" {
+		return fmt.Errorf("请选择备份并确认恢复")
+	}
+	if action == "discard" {
+		if !confirmed {
+			return fmt.Errorf("请先确认撤销影响")
+		}
+		p, err := s.GetDiscardPreview(path)
+		if err != nil {
+			return err
+		}
+		names := make([]string, 0, len(p.Files))
+		for _, f := range p.Files {
+			names = append(names, f.Path)
+		}
+		return s.StartDiscard(p, names, false, true)
+	}
 	if action == "merge" || action == "pull-merge" {
 		return fmt.Errorf("请先预览合并关系并确认策略")
 	}
@@ -95,6 +112,10 @@ func (s *GitService) StartAction(path, action, target string, confirmed bool) er
 }
 
 func (s *GitService) startAction(path, action, target string, confirmed bool, preview *gitengine.MergePreview, strategy string) error {
+	return s.startRepositoryOperation(path, action, target, confirmed, preview, strategy, nil)
+}
+
+func (s *GitService) startRepositoryOperation(path, action, target string, confirmed bool, preview *gitengine.MergePreview, strategy string, operation func(context.Context) (string, error)) error {
 	if action == "fetch" {
 		return s.StartFetch([]string{path})
 	}
@@ -130,7 +151,9 @@ func (s *GitService) startAction(path, action, target string, confirmed bool, pr
 		started := time.Now()
 		var output string
 		var actionErr error
-		if preview != nil {
+		if operation != nil {
+			output, actionErr = operation(ctx)
+		} else if preview != nil {
 			if preview.Branch != repo.Branch {
 				actionErr = fmt.Errorf("当前分支已变化，请重新预览")
 			} else {

@@ -48,6 +48,14 @@ export function GetBranches(path: string): $CancellablePromise<string[] | null> 
     return $Call.ByID(3919711711, path);
 }
 
+export function GetDiscardBackups(path: string): $CancellablePromise<gitengine$0.DiscardBackup[] | null> {
+    return $Call.ByID(3423106750, path);
+}
+
+export function GetDiscardPreview(path: string): $CancellablePromise<gitengine$0.DiscardPreview> {
+    return $Call.ByID(3450809453, path);
+}
+
 /**
  * GetFetchResults reads retained fetch provenance, using disk history when configured.
  */
@@ -127,6 +135,10 @@ export function StartAction(path: string, action: string, target: string, confir
     return $Call.ByID(481400661, path, action, target, confirmed);
 }
 
+export function StartDiscard(preview: gitengine$0.DiscardPreview, names: string[] | null, backup: boolean, confirmed: boolean): $CancellablePromise<void> {
+    return $Call.ByID(4150425603, preview, names, backup, confirmed);
+}
+
 /**
  * StartFetch accepts only repositories from the current scan, deduplicating selections.
  */
@@ -140,6 +152,10 @@ export function StartFetchRemote(path: string, remote: string): $CancellableProm
 
 export function StartMerge(preview: gitengine$0.MergePreview, strategy: string, confirmed: boolean): $CancellablePromise<void> {
     return $Call.ByID(4042492005, preview, strategy, confirmed);
+}
+
+export function StartRestoreDiscard(path: string, id: string, confirmed: boolean): $CancellablePromise<void> {
+    return $Call.ByID(600075051, path, id, confirmed);
 }
 
 /**

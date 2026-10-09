@@ -72,6 +72,7 @@ type GitService struct {
 	taskSettings          *tasksettings.Store
 	taskSettingsError     error
 	history               *taskhistory.Store
+	backupDir             string
 	firstTaskLogID        int
 	schedules             map[string]ScheduleState
 	stopSchedules         context.CancelFunc

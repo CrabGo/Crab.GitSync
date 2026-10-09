@@ -34,6 +34,7 @@ func main() {
 	service := NewGitService()
 	service.taskSettings, service.taskSettingsError = tasksettings.New(filepath.Join(configDir, "Crab.GitSync", "tasks.json"))
 	service.history = taskhistory.New(filepath.Join(configDir, "Crab.GitSync", "history.json"))
+	service.backupDir = filepath.Join(configDir, "Crab.GitSync", "discard-backups")
 	historyPolicy := service.taskSettings.Get()
 	_ = service.history.Prune(historyPolicy.HistoryTasks, historyPolicy.HistoryDays)
 	service.fetchTimes = service.history.FetchTimes()

@@ -3,7 +3,7 @@ import { GitService } from '../bindings/crab.gitsync'
 import type { Record as HistoricalRecord, Summary } from '../bindings/crab.gitsync/internal/taskhistory/models'
 import TaskResults from './TaskResults'
 
-const kinds:Record<string,string>={scan:'扫描',fetch:'获取远端',merge:'合并',discard:'撤销修改','pull-merge':'拉取并合并','abort-merge':'中止合并'}
+const kinds:Record<string,string>={scan:'扫描',fetch:'获取远端',merge:'合并',discard:'撤销修改','restore-discard':'恢复撤销备份','pull-merge':'拉取并合并','abort-merge':'中止合并'}
 export default function TaskHistory({connected,taskID,finishedAt,canRetry,onRetry}:{connected:boolean,taskID:string,finishedAt:string,canRetry:boolean,onRetry:(id:string)=>void}) {
   const [policy,setPolicy]=useState({historyTasks:100,historyDays:30})
   const [tasks,setTasks]=useState<Summary[]>([])
