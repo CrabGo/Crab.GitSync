@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -14,6 +15,16 @@ var pageTitles = map[string]string{"workspace": "仓库工作台", "logs": "任�
 type DesktopService struct {
 	window   *application.WebviewWindow
 	notifier *notifications.NotificationService
+}
+
+//wails:ignore
+func (s *DesktopService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	return s.notifier.ServiceStartup(ctx, options)
+}
+
+//wails:ignore
+func (s *DesktopService) ServiceShutdown() error {
+	return s.notifier.ServiceShutdown()
 }
 
 func (s *DesktopService) SetPage(page string) error {

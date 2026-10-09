@@ -30,7 +30,7 @@ func main() {
 				desktop.window.Focus()
 			}
 		}},
-		Services: []application.Service{application.NewService(service), application.NewService(updates), application.NewService(desktop), application.NewService(desktop.notifier)},
+		Services: []application.Service{application.NewService(service), application.NewService(updates), application.NewService(desktop)},
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		Mac:      application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	})
