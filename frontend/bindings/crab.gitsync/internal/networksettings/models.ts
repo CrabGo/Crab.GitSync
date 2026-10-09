@@ -6,4 +6,5 @@ export interface Config {
     "protocol": string;
     "host": string;
     "port": number;
+    "autoRetry": boolean;
 }

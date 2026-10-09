@@ -56,10 +56,25 @@ type GitService struct {
 	inspectRepository func(context.Context, string) (gitengine.Repository, error)
 	fetchHistory      map[string][]taskresult.Result
 	fetchHistoryOrder []string
+	retryEnabled      func() bool
+	waitRetry         func(context.Context, time.Duration) error
+}
+
+type autoRetryKey struct{}
+
+func waitRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func NewGitService() *GitService {
-	return &GitService{fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
+	return &GitService{waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
 }
 
 // ChooseDirectory opens the native directory picker. An empty result means cancelled.
@@ -146,6 +161,9 @@ func (s *GitService) begin(kind, root, phase string) (context.Context, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	if s.proxyURL != nil {
 		ctx = gitengine.WithProxy(ctx, s.proxyURL())
+	}
+	if s.retryEnabled != nil {
+		ctx = context.WithValue(ctx, autoRetryKey{}, s.retryEnabled())
 	}
 	s.cancel = cancel
 	repos, logs := s.state.Repositories, s.state.Logs
@@ -324,11 +342,12 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 		}
 		s.mu.Unlock()
 		var err error
+		attempts := 1
 		networkSucceeded := false
 		var refreshed *gitengine.Repository
 		if refreshOnly[repo.Path] || len(repo.Remotes) > 0 {
 			if !refreshOnly[repo.Path] {
-				err = s.fetchRepository(ctx, repo.Path)
+				err, attempts = s.fetchWithRetry(ctx, repo.Path)
 			}
 			if err == nil {
 				networkSucceeded = true
@@ -342,7 +361,7 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 			}
 		}
 		s.mu.Lock()
-		result := taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "success", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), NetworkSucceeded: networkSucceeded, Failure: taskresult.Wrap(err, stage)}
+		result := taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "success", Attempts: attempts, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), NetworkSucceeded: networkSucceeded, Failure: taskresult.Wrap(err, stage)}
 		if ctx.Err() != nil {
 			result.Status = "cancelled"
 			result.Failure = taskresult.Wrap(ctx.Err(), stage)
@@ -382,6 +401,54 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 		s.mu.Unlock()
 	}
 	s.finish(ctx, nil)
+}
+
+// fetchWithRetry never retries authentication, TLS, repository-state or refresh errors.
+func (s *GitService) fetchWithRetry(ctx context.Context, path string) (error, int) {
+	enabled, _ := ctx.Value(autoRetryKey{}).(bool)
+	for attempt := 1; ; attempt++ {
+		err := s.fetchRepository(ctx, path)
+		failure := taskresult.Wrap(err, "fetch")
+		if err == nil || !enabled || attempt == 3 || ctx.Err() != nil || !retryableNetwork(failure) {
+			return err, attempt
+		}
+		delay := []time.Duration{2 * time.Second, 5 * time.Second}[attempt-1]
+		s.mu.Lock()
+		s.logLocked("warn", fmt.Sprintf("%s：暂时性网络故障，%d 秒后自动重试（第 %d/3 次尝试）", path, int(delay.Seconds()), attempt+1))
+		for i := range s.state.Results {
+			if s.state.Results[i].Path == path {
+				s.state.Results[i].Stage = "retry-wait"
+				s.state.Results[i].Attempts = attempt
+			}
+		}
+		s.mu.Unlock()
+		if waitErr := s.waitRetry(ctx, delay); waitErr != nil {
+			return waitErr, attempt
+		}
+		if ctx.Err() != nil {
+			return ctx.Err(), attempt
+		}
+		s.mu.Lock()
+		for i := range s.state.Results {
+			if s.state.Results[i].Path == path {
+				s.state.Results[i].Stage = "fetch"
+				s.state.Results[i].Attempts = attempt + 1
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+func retryableNetwork(f *taskresult.Failure) bool {
+	if f == nil || !f.Retryable {
+		return false
+	}
+	switch f.Category {
+	case "timeout", "dns", "proxy", "connection":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *GitService) recordResultLocked(result taskresult.Result) {

@@ -29,6 +29,7 @@ func main() {
 	network := &NetworkService{store: store, loadError: loadErr, diagnostics: diagnostics.New(diagnostics.Probes{})}
 	proxy := func() *url.URL { value, _ := store.Get().URL(); return value }
 	service := NewGitService()
+	service.retryEnabled = func() bool { return store.Get().AutoRetry }
 	service.proxyURL = func() string {
 		if value := proxy(); value != nil {
 			return value.String()

@@ -3,7 +3,7 @@ import { NetworkService } from '../bindings/crab.gitsync'
 import type { State as DiagnosisState } from '../bindings/crab.gitsync/internal/diagnostics/models'
 
 export default function NetworkPanel({ connected }: { connected: boolean }) {
-  const [config,setConfig]=useState({enabled:true,protocol:'http',host:'127.0.0.1',port:33210})
+  const [config,setConfig]=useState({enabled:true,protocol:'http',host:'127.0.0.1',port:33210,autoRetry:false})
   const [loaded,setLoaded]=useState(false)
   const [pending,setPending]=useState(false)
   const [error,setError]=useState('')
@@ -42,6 +42,7 @@ export default function NetworkPanel({ connected }: { connected: boolean }) {
         <label>代理端口<input type="number" min="1" max="65535" value={config.port} onChange={e=>setConfig({...config,port:Number(e.target.value)})}/></label>
       </div>
       <p className="proxy-hint">默认 HTTP · 127.0.0.1:33210。代理程序需要已启动。关闭后沿用系统、环境变量及 Git 原有网络配置。SSH 仓库沿用本机 SSH 配置。</p>
+      <label className="proxy-toggle"><input type="checkbox" checked={config.autoRetry} onChange={e=>setConfig({...config,autoRetry:e.target.checked})}/>启用 fetch 网络自动重试</label><p className="proxy-hint">默认关闭。仅对暂时性网络故障追加最多 2 次尝试，分别等待 2 秒和 5 秒，可取消。认证、证书、仓库状态及刷新失败需要手动处理。修改仅对新任务生效。</p>
       <button className="primary" onClick={()=>void save()}>{pending?'正在保存…':'保存配置'}</button>
     </fieldset>
     {saved && <p className="proxy-saved" role="status">配置已保存，新网络请求生效；运行中的 Git 任务使用启动时配置。</p>}

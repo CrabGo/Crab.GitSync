@@ -1,6 +1,7 @@
 package networksettings
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -26,7 +27,7 @@ func TestPersistAndValidateProxy(t *testing.T) {
 	if err != nil || loaded.Get() != c {
 		t.Fatalf("reload: %v %v", loaded, err)
 	}
-	for _, bad := range []Config{{true, "ftp", "localhost", 80}, {true, "http", "http://localhost", 80}, {true, "http", "localhost", 0}, {true, "http", "localhost", 65536}, {true, "http", "host/path", 80}} {
+	for _, bad := range []Config{{true, "ftp", "localhost", 80, false}, {true, "http", "http://localhost", 80, false}, {true, "http", "localhost", 0, false}, {true, "http", "localhost", 65536, false}, {true, "http", "host/path", 80, false}} {
 		if err = s.Save(bad); err == nil {
 			t.Fatalf("invalid proxy accepted: %+v", bad)
 		}
@@ -43,5 +44,25 @@ func TestPersistAndValidateProxy(t *testing.T) {
 	}
 	if err = s.Save(Default()); err != nil {
 		t.Fatal("cannot replace existing settings:", err)
+	}
+}
+
+func TestAutoRetryPersistsAndOldConfigDefaultsOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "network.json")
+	if err := os.WriteFile(path, []byte(`{"enabled":true,"protocol":"http","host":"127.0.0.1","port":33210}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(path)
+	if err != nil || store.Get().AutoRetry {
+		t.Fatal("old config did not default off", err)
+	}
+	config := store.Get()
+	config.AutoRetry = true
+	if err = store.Save(config); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := New(path)
+	if err != nil || !loaded.Get().AutoRetry {
+		t.Fatal("retry config not persisted", err)
 	}
 }

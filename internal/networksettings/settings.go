@@ -14,10 +14,11 @@ import (
 )
 
 type Config struct {
-	Enabled  bool   `json:"enabled"`
-	Protocol string `json:"protocol"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
+	Enabled   bool   `json:"enabled"`
+	Protocol  string `json:"protocol"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	AutoRetry bool   `json:"autoRetry"`
 }
 
 func Default() Config { return Config{Enabled: true, Protocol: "http", Host: "127.0.0.1", Port: 33210} }
