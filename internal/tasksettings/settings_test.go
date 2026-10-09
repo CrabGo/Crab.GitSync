@@ -40,3 +40,23 @@ func TestDefaultPersistenceValidationAndWriteRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLegacyConfigGetsRetentionDefaultsAndKeepsPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	os.WriteFile(path, []byte(`{"concurrency":2}`), 0600)
+	s, err := New(path)
+	if err != nil || s.Get().HistoryTasks != 100 || s.Get().HistoryDays != 30 {
+		t.Fatal("legacy defaults", err)
+	}
+	if err = s.Save(Config{Concurrency: 2, HistoryTasks: 5, HistoryDays: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Save(Config{Concurrency: 3}); err != nil || s.Get().HistoryTasks != 5 || s.Get().HistoryDays != 7 {
+		t.Fatal("old client lost retention", err)
+	}
+	for _, c := range []Config{{Concurrency: 3, HistoryTasks: -1, HistoryDays: 7}, {Concurrency: 3, HistoryTasks: 1001, HistoryDays: 7}, {Concurrency: 3, HistoryTasks: 5, HistoryDays: 366}} {
+		if s.Save(c) == nil {
+			t.Fatal("invalid retention accepted")
+		}
+	}
+}

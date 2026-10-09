@@ -22,3 +22,7 @@
 .scan-lists input, .scan-lists select, .scan-lists textarea { border: 1px solid #dde3ed; border-radius: 7px; padding: 10px; background: white; color: #344259; font: inherit; }
 .scan-lists textarea { resize: vertical; min-height: 100px; }
 .scan-lists textarea:focus, .scan-lists input:focus { outline: 2px solid #b7ccfc; }
+.task-results p { overflow-wrap: anywhere; }
+.task-results select { max-width: 100%; }
+.task-results > details > pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.scan-list-controls input[type="number"] { width: 112px; padding: 8px; border: 1px solid #dbe2ea; border-radius: 7px; }

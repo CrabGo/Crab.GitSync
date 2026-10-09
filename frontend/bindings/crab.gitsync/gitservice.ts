@@ -18,6 +18,9 @@ import * as gitengine$0 from "./internal/gitengine/models.js";
 import * as scansettings$0 from "./internal/scansettings/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as taskhistory$0 from "./internal/taskhistory/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as taskresult$0 from "./internal/taskresult/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -46,10 +49,14 @@ export function GetBranches(path: string): $CancellablePromise<string[] | null> 
 }
 
 /**
- * GetFetchResults retains the last ten completed fetch tasks for retry provenance.
+ * GetFetchResults reads retained fetch provenance, using disk history when configured.
  */
 export function GetFetchResults(taskID: string): $CancellablePromise<taskresult$0.Result[] | null> {
     return $Call.ByID(468996345, taskID);
+}
+
+export function GetHistoryWarning(): $CancellablePromise<string> {
+    return $Call.ByID(1810016235);
 }
 
 export function GetScanLists(): $CancellablePromise<scansettings$0.List[] | null> {
@@ -65,6 +72,14 @@ export function GetState(): $CancellablePromise<$models.State> {
 
 export function GetTaskConfig(): $CancellablePromise<tasksettings$0.Config> {
     return $Call.ByID(2312320408);
+}
+
+export function GetTaskHistory(id: string): $CancellablePromise<taskhistory$0.Record> {
+    return $Call.ByID(3136036102, id);
+}
+
+export function ListTaskHistory(): $CancellablePromise<taskhistory$0.Summary[] | null> {
+    return $Call.ByID(3180995000);
 }
 
 /**

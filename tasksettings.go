@@ -23,5 +23,11 @@ func (s *GitService) SaveTaskConfig(config tasksettings.Config) error {
 		return err
 	}
 	s.taskSettingsError = nil
+	if s.history != nil {
+		saved := s.taskSettings.Get()
+		if err := s.history.Prune(saved.HistoryTasks, saved.HistoryDays); err != nil {
+			s.logLocked("warn", "历史清理未写入磁盘："+err.Error())
+		}
+	}
 	return nil
 }

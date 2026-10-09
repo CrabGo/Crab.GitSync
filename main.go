@@ -4,6 +4,7 @@ import (
 	"crab.gitsync/internal/diagnostics"
 	"crab.gitsync/internal/networksettings"
 	"crab.gitsync/internal/scansettings"
+	"crab.gitsync/internal/taskhistory"
 	"crab.gitsync/internal/tasksettings"
 	"crab.gitsync/internal/updatefeed"
 	"embed"
@@ -32,6 +33,10 @@ func main() {
 	proxy := func() *url.URL { value, _ := store.Get().URL(); return value }
 	service := NewGitService()
 	service.taskSettings, service.taskSettingsError = tasksettings.New(filepath.Join(configDir, "Crab.GitSync", "tasks.json"))
+	service.history = taskhistory.New(filepath.Join(configDir, "Crab.GitSync", "history.json"))
+	historyPolicy := service.taskSettings.Get()
+	_ = service.history.Prune(historyPolicy.HistoryTasks, historyPolicy.HistoryDays)
+	service.fetchTimes = service.history.FetchTimes()
 	service.scanLists, service.scanLoadError = scansettings.New(filepath.Join(configDir, "Crab.GitSync", "scans.json"))
 	service.retryEnabled = func() bool { return store.Get().AutoRetry }
 	service.proxyURL = func() string {

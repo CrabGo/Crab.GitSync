@@ -9,10 +9,12 @@ import (
 )
 
 type Config struct {
-	Concurrency int `json:"concurrency"`
+	Concurrency  int `json:"concurrency"`
+	HistoryTasks int `json:"historyTasks"`
+	HistoryDays  int `json:"historyDays"`
 }
 
-func Default() Config { return Config{Concurrency: 3} }
+func Default() Config { return Config{Concurrency: 3, HistoryTasks: 100, HistoryDays: 30} }
 
 type Store struct {
 	mu     sync.Mutex
@@ -43,10 +45,21 @@ func validate(c Config) error {
 	if c.Concurrency < 1 || c.Concurrency > 5 {
 		return fmt.Errorf("并发仓库数必须为 1–5")
 	}
+	if c.HistoryTasks < 1 || c.HistoryTasks > 1000 || c.HistoryDays < 1 || c.HistoryDays > 365 {
+		return fmt.Errorf("历史保留需为 1–1000 个任务及 1–365 天")
+	}
 	return nil
 }
 func (s *Store) Get() Config { s.mu.Lock(); defer s.mu.Unlock(); return s.config }
 func (s *Store) Save(c Config) error {
+	// Older clients omit retention fields; keep the existing policy in that case.
+	current := s.Get()
+	if c.HistoryTasks == 0 {
+		c.HistoryTasks = current.HistoryTasks
+	}
+	if c.HistoryDays == 0 {
+		c.HistoryDays = current.HistoryDays
+	}
 	if err := validate(c); err != nil {
 		return err
 	}

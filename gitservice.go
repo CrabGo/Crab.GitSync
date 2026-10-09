@@ -11,6 +11,7 @@ import (
 
 	"crab.gitsync/internal/gitengine"
 	"crab.gitsync/internal/scansettings"
+	"crab.gitsync/internal/taskhistory"
 	"crab.gitsync/internal/taskqueue"
 	"crab.gitsync/internal/taskresult"
 	"crab.gitsync/internal/tasksettings"
@@ -68,6 +69,8 @@ type GitService struct {
 	scheduler         *taskqueue.Scheduler
 	taskSettings      *tasksettings.Store
 	taskSettingsError error
+	history           *taskhistory.Store
+	firstTaskLogID    int
 }
 
 type autoRetryKey struct{}
@@ -118,11 +121,11 @@ func cloneResults(results []taskresult.Result) []taskresult.Result {
 	return copy
 }
 
-// GetFetchResults retains the last ten completed fetch tasks for retry provenance.
+// GetFetchResults reads retained fetch provenance, using disk history when configured.
 func (s *GitService) GetFetchResults(taskID string) ([]taskresult.Result, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	results, ok := s.fetchHistory[taskID]
+	results, ok := s.fetchResultsLocked(taskID)
 	if !ok {
 		return nil, fmt.Errorf("未找到已完成的获取任务，任务记录可能已过期")
 	}
@@ -133,7 +136,7 @@ func (s *GitService) GetFetchResults(taskID string) ([]taskresult.Result, error)
 func (s *GitService) RetryFailed(taskID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	results, ok := s.fetchHistory[taskID]
+	results, ok := s.fetchResultsLocked(taskID)
 	if !ok {
 		return fmt.Errorf("未找到已完成的获取任务，任务记录可能已过期")
 	}
@@ -184,6 +187,7 @@ func (s *GitService) begin(kind, root, phase string) (context.Context, error) {
 		limit = s.taskSettings.Get().Concurrency
 	}
 	ctx = context.WithValue(ctx, concurrencyKey{}, limit)
+	s.firstTaskLogID = s.logID + 1
 	s.cancel = cancel
 	repos, logs := s.state.Repositories, s.state.Logs
 	s.state = State{Busy: true, Kind: kind, Phase: phase, Root: root, StartedAt: time.Now().Format(time.RFC3339), Repositories: repos, Logs: logs}
@@ -560,6 +564,7 @@ func (s *GitService) finish(ctx context.Context, err error) {
 			s.fetchHistoryOrder = s.fetchHistoryOrder[1:]
 		}
 	}
+	s.persistCompletedLocked()
 }
 
 func phasesForNotification(phase string) string {

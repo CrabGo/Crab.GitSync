@@ -4,6 +4,7 @@ import type { State, UpdateState } from '../bindings/crab.gitsync/models'
 import UpdatePanel from './UpdatePanel'
 import NetworkPanel from './NetworkPanel'
 import TaskResults from './TaskResults'
+import TaskHistory from './TaskHistory'
 import ScanLists from './ScanLists'
 import TaskSettings from './TaskSettings'
 import RepositoryActions from './RepositoryActions'
@@ -139,6 +140,7 @@ function App() {
       {page === 'settings' && <NetworkPanel connected={connected}/>}
       {page === 'help' && <section className="help-panel"><strong>如何使用</strong><p>选择或输入一个目录，递归扫描其中的仓库。勾选仓库后点击「获取远端更新」，对各仓库的全部远端执行 fetch。认证使用本机 Git 配置，需提前完成 SSH 或凭据配置。</p><p>批量获取及右键「拉取」仅执行 fetch。右键「合并」「拉取并合并」默认仅快进，会修改工作区；执行前预览提交关系并确认目标。普通合并需要主动选择策略并额外确认；获取后目标变化时需重新预览。撤销本地修改只恢复已跟踪文件，保留新增文件与本地提交。扫描跳过 .git、node_modules、.venv，不跟随子目录符号链接。领先／落后数基于本地跟踪分支，fetch 后刷新。日志保留最近 500 条。</p><p>路径会记住上次选择，历史路径下拉保留最近 20 个目录。切换菜单不会中断正在进行的任务。</p><p>关闭窗口后应用继续在托盘运行。单击托盘恢复窗口，右键打开菜单，可取消任务或退出。任务完成和发现更新时会发送系统通知；点击通知可打开对应页面。</p><p>应用启动时及每 6 小时检查 GitHub Releases。公开仓库更新无需登录或配置令牌。下载完成后校验 SHA-256，点击重启安装。</p></section>}
       {error && <div className="error-banner" role="alert"><Icon name="info"/><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
+      {page === 'logs' && <TaskHistory connected={connected} taskID={state.taskID} finishedAt={state.finishedAt} canRetry={!busy && connected && repos.length>0} onRetry={id=>void perform(()=>GitService.RetryFailed(id))}/>}
       {page === 'logs' && <TaskResults results={state.results || []} taskID={state.taskID} sourceTaskID={state.sourceTaskID} canRetry={state.kind === 'fetch' && !busy && connected} onRetry={() => void perform(() => GitService.RetryFailed(state.taskID))}/>}
       {page === 'workspace' && <>
       <section className="scan-panel" aria-labelledby="scan-heading">
