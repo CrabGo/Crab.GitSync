@@ -17,6 +17,7 @@ export interface LogEntry {
 
 export interface State {
     "taskID": string;
+    "sourceTaskID": string;
     "results": taskresult$0.Result[] | null;
     "busy": boolean;
     "kind": string;

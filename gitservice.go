@@ -23,6 +23,7 @@ type LogEntry struct {
 
 type State struct {
 	TaskID       string                 `json:"taskID"`
+	SourceTaskID string                 `json:"sourceTaskID"`
 	Results      []taskresult.Result    `json:"results"`
 	Busy         bool                   `json:"busy"`
 	Kind         string                 `json:"kind"`
@@ -53,10 +54,12 @@ type GitService struct {
 	proxyURL          func() string
 	fetchRepository   func(context.Context, string) error
 	inspectRepository func(context.Context, string) (gitengine.Repository, error)
+	fetchHistory      map[string][]taskresult.Result
+	fetchHistoryOrder []string
 }
 
 func NewGitService() *GitService {
-	return &GitService{fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
+	return &GitService{fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
 }
 
 // ChooseDirectory opens the native directory picker. An empty result means cancelled.
@@ -74,14 +77,52 @@ func (s *GitService) GetState() State {
 		copy.Repositories[i].Remotes = append([]gitengine.Remote{}, s.state.Repositories[i].Remotes...)
 	}
 	copy.Logs = append([]LogEntry{}, s.state.Logs...)
-	copy.Results = append([]taskresult.Result{}, s.state.Results...)
-	for i := range copy.Results {
-		if copy.Results[i].Failure != nil {
-			f := *copy.Results[i].Failure
-			copy.Results[i].Failure = &f
+	copy.Results = cloneResults(s.state.Results)
+	return copy
+}
+
+func cloneResults(results []taskresult.Result) []taskresult.Result {
+	copy := append([]taskresult.Result{}, results...)
+	for i := range copy {
+		if copy[i].Failure != nil {
+			f := *copy[i].Failure
+			copy[i].Failure = &f
 		}
 	}
 	return copy
+}
+
+// GetFetchResults retains the last ten completed fetch tasks for retry provenance.
+func (s *GitService) GetFetchResults(taskID string) ([]taskresult.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	results, ok := s.fetchHistory[taskID]
+	if !ok {
+		return nil, fmt.Errorf("未找到已完成的获取任务，任务记录可能已过期")
+	}
+	return cloneResults(results), nil
+}
+
+// RetryFailed retries errors only. A successful fetch with a failed refresh never fetches again.
+func (s *GitService) RetryFailed(taskID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	results, ok := s.fetchHistory[taskID]
+	if !ok {
+		return fmt.Errorf("未找到已完成的获取任务，任务记录可能已过期")
+	}
+	paths := []string{}
+	refreshOnly := map[string]bool{}
+	for _, result := range results {
+		if result.Status == "error" {
+			paths = append(paths, result.Path)
+			refreshOnly[result.Path] = result.NetworkSucceeded && result.Stage == "refresh"
+		}
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("该任务没有需要重试的失败仓库")
+	}
+	return s.startFetchLocked(paths, refreshOnly, taskID)
 }
 
 func (s *GitService) logLocked(level, message string) {
@@ -200,6 +241,10 @@ func (s *GitService) scan(ctx context.Context, root string) {
 func (s *GitService) StartFetch(paths []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.startFetchLocked(paths, nil, "")
+}
+
+func (s *GitService) startFetchLocked(paths []string, refreshOnly map[string]bool, sourceTaskID string) error {
 	selected := []gitengine.Repository{}
 	seen := map[string]bool{}
 	for _, path := range paths {
@@ -227,14 +272,20 @@ func (s *GitService) StartFetch(paths []string) error {
 		return err
 	}
 	s.state.Total = len(selected)
+	s.state.SourceTaskID = sourceTaskID
 	for _, repo := range selected {
 		s.state.Results = append(s.state.Results, taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: "queued", Status: "queued"})
 	}
 	for i := range s.state.Repositories {
-		s.state.Repositories[i].FetchStatus = "idle"
+		if seen[s.state.Repositories[i].Path] {
+			s.state.Repositories[i].FetchStatus = "idle"
+		}
+	}
+	if sourceTaskID != "" {
+		s.logLocked("info", "重试失败仓库，来源任务："+sourceTaskID)
 	}
 	s.logLocked("info", fmt.Sprintf("开始获取 %d 个仓库的远端更新，工作区保持不变", len(selected)))
-	go s.fetch(ctx, selected)
+	go s.fetch(ctx, selected, refreshOnly)
 	return nil
 }
 
@@ -252,24 +303,33 @@ func (s *GitService) updateRepoLocked(path string, status, message string, refre
 	}
 }
 
-func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository) {
+func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, refreshOnly map[string]bool) {
 	for _, repo := range repos {
 		if ctx.Err() != nil {
 			break
 		}
 		s.mu.Lock()
 		started := time.Now()
+		stage := "fetch"
+		if refreshOnly[repo.Path] {
+			stage = "refresh"
+		}
 		s.state.Current = repo.Path
-		s.recordResultLocked(taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: "fetch", Status: "running", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano)})
+		s.recordResultLocked(taskresult.Result{TaskID: s.state.TaskID, Kind: "fetch", Path: repo.Path, Branch: repo.Branch, Stage: stage, Status: "running", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano)})
 		s.updateRepoLocked(repo.Path, "fetching", "", nil)
-		s.logLocked("info", "获取远端更新："+repo.Name)
+		if refreshOnly[repo.Path] {
+			s.logLocked("info", "仅刷新本地状态："+repo.Name)
+		} else {
+			s.logLocked("info", "获取远端更新："+repo.Name)
+		}
 		s.mu.Unlock()
 		var err error
-		stage := "fetch"
 		networkSucceeded := false
 		var refreshed *gitengine.Repository
-		if len(repo.Remotes) > 0 {
-			err = s.fetchRepository(ctx, repo.Path)
+		if refreshOnly[repo.Path] || len(repo.Remotes) > 0 {
+			if !refreshOnly[repo.Path] {
+				err = s.fetchRepository(ctx, repo.Path)
+			}
 			if err == nil {
 				networkSucceeded = true
 				stage = "refresh"
@@ -293,7 +353,7 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository) {
 		}
 		s.state.Completed++
 		switch {
-		case len(repo.Remotes) == 0:
+		case len(repo.Remotes) == 0 && !refreshOnly[repo.Path]:
 			result.Status = "skipped"
 			result.Attempts = 0
 			result.Stage = "fetch"
@@ -312,7 +372,11 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository) {
 		default:
 			s.state.Succeeded++
 			s.updateRepoLocked(repo.Path, "success", refreshed.Error, refreshed)
-			s.logLocked("success", repo.Name+"：远端更新已获取")
+			if refreshOnly[repo.Path] {
+				s.logLocked("success", repo.Name+"：本地状态已刷新（沿用来源任务的远端获取结果）")
+			} else {
+				s.logLocked("success", repo.Name+"：远端更新已获取")
+			}
 		}
 		s.recordResultLocked(result)
 		s.mu.Unlock()
@@ -366,6 +430,14 @@ func (s *GitService) finish(ctx context.Context, err error) {
 	default:
 		s.state.Phase = "done"
 		s.logLocked("info", fmt.Sprintf("任务完成：成功 %d，错误/警告 %d，跳过 %d", s.state.Succeeded, s.state.Failed, s.state.Skipped))
+	}
+	if s.state.Kind == "fetch" {
+		s.fetchHistory[s.state.TaskID] = cloneResults(s.state.Results)
+		s.fetchHistoryOrder = append(s.fetchHistoryOrder, s.state.TaskID)
+		if len(s.fetchHistoryOrder) > 10 {
+			delete(s.fetchHistory, s.fetchHistoryOrder[0])
+			s.fetchHistoryOrder = s.fetchHistoryOrder[1:]
+		}
 	}
 }
 

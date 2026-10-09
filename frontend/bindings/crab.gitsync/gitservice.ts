@@ -12,6 +12,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as taskresult$0 from "./internal/taskresult/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -33,10 +37,24 @@ export function GetBranches(path: string): $CancellablePromise<string[] | null> 
 }
 
 /**
+ * GetFetchResults retains the last ten completed fetch tasks for retry provenance.
+ */
+export function GetFetchResults(taskID: string): $CancellablePromise<taskresult$0.Result[] | null> {
+    return $Call.ByID(468996345, taskID);
+}
+
+/**
  * GetState returns copies so a concurrent task cannot mutate a frontend response.
  */
 export function GetState(): $CancellablePromise<$models.State> {
     return $Call.ByID(4064312392);
+}
+
+/**
+ * RetryFailed retries errors only. A successful fetch with a failed refresh never fetches again.
+ */
+export function RetryFailed(taskID: string): $CancellablePromise<void> {
+    return $Call.ByID(1171788232, taskID);
 }
 
 /**
