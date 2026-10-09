@@ -28,11 +28,22 @@ export function ChooseDirectory(): $CancellablePromise<string> {
     return $Call.ByID(3405243763);
 }
 
+export function GetBranches(path: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3919711711, path);
+}
+
 /**
  * GetState returns copies so a concurrent task cannot mutate a frontend response.
  */
 export function GetState(): $CancellablePromise<$models.State> {
     return $Call.ByID(4064312392);
+}
+
+/**
+ * StartAction executes only an explicit single-repository action selected in the UI.
+ */
+export function StartAction(path: string, action: string, target: string, confirmed: boolean): $CancellablePromise<void> {
+    return $Call.ByID(481400661, path, action, target, confirmed);
 }
 
 /**

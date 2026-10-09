@@ -1,9 +1,1 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg width="100%" height="100%" viewBox="0 0 583 533" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
-    <g transform="matrix(1,0,0,1,-246,-251)">
-        <g id="Ebene1">
-            <path d="M246,251L265,784L401,784L506,450L507,450L505,784L641,784L829,251L682,251L596,567L595,567L596,251L478,251L378,568L391,251L246,251Z"/>
-        </g>
-    </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="2" y="2" width="124" height="124" rx="29" fill="#2261d8"/><g fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M40 68 25 54V32l-9 10m9-10 10 10M88 68l15-14V32l9 10m-9-10-10 10M36 78l-17 7m17 5-14 13m26-7-9 15M92 78l17 7M92 90l14 13M80 96l9 15M49 62V48m30 14V48"/></g><ellipse cx="64" cy="78" rx="33" ry="24" fill="#fff"/><circle cx="49" cy="46" r="6" fill="#fff"/><circle cx="79" cy="46" r="6" fill="#fff"/><path d="M57 88V70h15" fill="none" stroke="#2261d8" stroke-width="5" stroke-linecap="round"/><g fill="#2261d8"><circle cx="57" cy="88" r="5"/><circle cx="57" cy="70" r="5"/><circle cx="72" cy="70" r="5"/></g></svg>

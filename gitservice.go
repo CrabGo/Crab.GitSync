@@ -281,6 +281,9 @@ func (s *GitService) finish(ctx context.Context, err error) {
 			if s.state.Kind == "fetch" {
 				title = "远端更新任务"
 			}
+			if label, ok := actionLabels[s.state.Kind]; ok && s.state.Kind != "fetch" {
+				title = label + "任务"
+			}
 			message := fmt.Sprintf("%s：成功 %d，错误/警告 %d，跳过 %d", phasesForNotification(s.state.Phase), s.state.Succeeded, s.state.Failed, s.state.Skipped)
 			go s.notify(title, message, "logs")
 		}

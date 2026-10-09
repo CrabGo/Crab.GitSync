@@ -36,7 +36,7 @@ export function Restart(): $CancellablePromise<void> {
 }
 
 /**
- * StartCheck starts an asynchronous, authenticated check of stable GitHub releases.
+ * StartCheck checks stable public GitHub releases without a login or API token.
  */
 export function StartCheck(): $CancellablePromise<void> {
     return $Call.ByID(1184951764);

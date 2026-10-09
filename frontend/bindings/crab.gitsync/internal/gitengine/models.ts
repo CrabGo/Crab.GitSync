@@ -18,6 +18,7 @@ export interface Repository {
     "behind": number;
     "bare": boolean;
     "detached": boolean;
+    "mergeInProgress": boolean;
     "lastCommit": string;
     "fetchStatus": string;
     "error": string;

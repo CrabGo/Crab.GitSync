@@ -68,7 +68,7 @@ func (s *UpdateService) log(level, message string) {
 	s.git.logLocked(level, "应用更新："+message)
 }
 
-// StartCheck starts an asynchronous, authenticated check of stable GitHub releases.
+// StartCheck checks stable public GitHub releases without a login or API token.
 func (s *UpdateService) StartCheck() error {
 	s.mu.Lock()
 	if s.state.Busy || s.state.Phase == "ready" {
@@ -81,8 +81,9 @@ func (s *UpdateService) StartCheck() error {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		token, source := updatefeed.ResolveToken(ctx)
-		provider, err := updatefeed.NewGitHub(ReleaseRepository, token, "", nil)
+		provider := updatefeed.NewPublicGitHub(ReleaseRepository, "", nil)
+		source := "公开发布源 · 无需登录"
+		var err error
 		var release *updater.Release
 		if err == nil {
 			err = s.app.Updater.Init(updater.Config{CurrentVersion: Version, Providers: []updater.Provider{provider}, Window: updater.WindowNone})
@@ -131,7 +132,7 @@ func (s *UpdateService) finish(ctx context.Context, phase string, err error) {
 	s.state.Busy = false
 	if err != nil {
 		s.state.Phase = "error"
-		s.state.Error = "更新失败，请检查网络、GitHub 认证以及发布文件后重试"
+		s.state.Error = "更新失败，请检查网络、代理以及发布文件后重试"
 		if phase == "up-to-date" || phase == "available" {
 			s.state.Error = err.Error()
 		}

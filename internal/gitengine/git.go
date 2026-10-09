@@ -21,19 +21,20 @@ type Remote struct {
 }
 
 type Repository struct {
-	Path        string   `json:"path"`
-	Name        string   `json:"name"`
-	Branch      string   `json:"branch"`
-	Upstream    string   `json:"upstream"`
-	Remotes     []Remote `json:"remotes"`
-	Changed     int      `json:"changed"`
-	Ahead       int      `json:"ahead"`
-	Behind      int      `json:"behind"`
-	Bare        bool     `json:"bare"`
-	Detached    bool     `json:"detached"`
-	LastCommit  string   `json:"lastCommit"`
-	FetchStatus string   `json:"fetchStatus"`
-	Error       string   `json:"error"`
+	Path            string   `json:"path"`
+	Name            string   `json:"name"`
+	Branch          string   `json:"branch"`
+	Upstream        string   `json:"upstream"`
+	Remotes         []Remote `json:"remotes"`
+	Changed         int      `json:"changed"`
+	Ahead           int      `json:"ahead"`
+	Behind          int      `json:"behind"`
+	Bare            bool     `json:"bare"`
+	Detached        bool     `json:"detached"`
+	MergeInProgress bool     `json:"mergeInProgress"`
+	LastCommit      string   `json:"lastCommit"`
+	FetchStatus     string   `json:"fetchStatus"`
+	Error           string   `json:"error"`
 }
 
 // Run invokes Git without a shell, with a deadline and interactive prompts disabled.
@@ -132,6 +133,10 @@ func Inspect(ctx context.Context, path string) (Repository, error) {
 		return r, err
 	}
 	r.Bare = bare == "true"
+	if !r.Bare {
+		_, mergeErr := run("rev-parse", "--verify", "--quiet", "MERGE_HEAD")
+		r.MergeInProgress = mergeErr == nil
+	}
 	if !r.Bare {
 		top, err := run("rev-parse", "--show-toplevel")
 		if err != nil {

@@ -25,7 +25,7 @@ export default function UpdatePanel({ state, gitBusy, connected, onChange }: { s
       {state.phase==='ready' && <button className="primary" disabled={gitBusy || pending} onClick={()=>void act(()=>UpdateService.Restart())}>重启应用更新</button>}
       {state.busy && state.phase!=='restarting' && <button disabled={pending} onClick={()=>void act(()=>UpdateService.Cancel())}>取消更新任务</button>}
       <button className="text-button" onClick={()=>void Browser.OpenURL('https://github.com/CrabGo/Crab.GitSync/releases')}>查看发布页面</button>
-      <span>{gitBusy && state.phase==='ready' ? 'Git 任务完成后可重启更新' : state.phase==='ready' ? '重启后自动替换程序，保留扫描路径' : state.checkedAt ? `上次检查 ${new Date(state.checkedAt).toLocaleString('zh-CN')}` : '私有仓库认证使用 GitHub CLI 或访问令牌环境变量'}</span>
+      <span>{gitBusy && state.phase==='ready' ? 'Git 任务完成后可重启更新' : state.phase==='ready' ? '重启后自动替换程序，保留扫描路径' : state.checkedAt ? `上次检查 ${new Date(state.checkedAt).toLocaleString('zh-CN')}` : '公开发布源，无需 GitHub 登录或令牌'}</span>
     </div>
   </section>
 }
