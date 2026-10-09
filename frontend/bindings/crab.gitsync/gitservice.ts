@@ -19,6 +19,9 @@ import * as scansettings$0 from "./internal/scansettings/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as taskresult$0 from "./internal/taskresult/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as tasksettings$0 from "./internal/tasksettings/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -60,6 +63,10 @@ export function GetState(): $CancellablePromise<$models.State> {
     return $Call.ByID(4064312392);
 }
 
+export function GetTaskConfig(): $CancellablePromise<tasksettings$0.Config> {
+    return $Call.ByID(2312320408);
+}
+
 /**
  * PreviewMerge is read-only and validates the current scanned scope.
  */
@@ -80,6 +87,10 @@ export function RetryFailed(taskID: string): $CancellablePromise<void> {
 
 export function SaveScanList(list: scansettings$0.List): $CancellablePromise<scansettings$0.List> {
     return $Call.ByID(1032563213, list);
+}
+
+export function SaveTaskConfig(config: tasksettings$0.Config): $CancellablePromise<void> {
+    return $Call.ByID(3503967119, config);
 }
 
 /**

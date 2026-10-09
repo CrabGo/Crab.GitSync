@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"sync"
 	"testing"
 
 	"crab.gitsync/internal/gitengine"
@@ -27,7 +29,10 @@ func TestRetryFailedPreservesSourceAndSkipsSuccessfulFetch(t *testing.T) {
 	fetches := []string{}
 	inspections := []string{}
 	retrying := false
+	var callsMu sync.Mutex
 	s.fetchRepository = func(_ context.Context, path string) error {
+		callsMu.Lock()
+		defer callsMu.Unlock()
 		fetches = append(fetches, filepath.Base(path))
 		if !retrying && filepath.Base(path) == "network" {
 			return fmt.Errorf("authentication failed")
@@ -35,6 +40,8 @@ func TestRetryFailedPreservesSourceAndSkipsSuccessfulFetch(t *testing.T) {
 		return nil
 	}
 	s.inspectRepository = func(_ context.Context, path string) (gitengine.Repository, error) {
+		callsMu.Lock()
+		defer callsMu.Unlock()
 		inspections = append(inspections, filepath.Base(path))
 		if !retrying && filepath.Base(path) == "refresh" {
 			return gitengine.Repository{}, fmt.Errorf("index unavailable")
@@ -54,6 +61,8 @@ func TestRetryFailedPreservesSourceAndSkipsSuccessfulFetch(t *testing.T) {
 	if retry.TaskID == source.TaskID || retry.SourceTaskID != source.TaskID || retry.Total != 2 || retry.Succeeded != 2 {
 		t.Fatalf("bad retry: %+v", retry)
 	}
+	sort.Strings(fetches)
+	sort.Strings(inspections)
 	if !reflect.DeepEqual(fetches, []string{"network"}) || !reflect.DeepEqual(inspections, []string{"network", "refresh"}) {
 		t.Fatalf("fetches=%v inspections=%v", fetches, inspections)
 	}

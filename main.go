@@ -4,6 +4,7 @@ import (
 	"crab.gitsync/internal/diagnostics"
 	"crab.gitsync/internal/networksettings"
 	"crab.gitsync/internal/scansettings"
+	"crab.gitsync/internal/tasksettings"
 	"crab.gitsync/internal/updatefeed"
 	"embed"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -30,6 +31,7 @@ func main() {
 	network := &NetworkService{store: store, loadError: loadErr, diagnostics: diagnostics.New(diagnostics.Probes{})}
 	proxy := func() *url.URL { value, _ := store.Get().URL(); return value }
 	service := NewGitService()
+	service.taskSettings, service.taskSettingsError = tasksettings.New(filepath.Join(configDir, "Crab.GitSync", "tasks.json"))
 	service.scanLists, service.scanLoadError = scansettings.New(filepath.Join(configDir, "Crab.GitSync", "scans.json"))
 	service.retryEnabled = func() bool { return store.Get().AutoRetry }
 	service.proxyURL = func() string {

@@ -73,6 +73,7 @@ func TestFetchStageResultsAndSnapshotIsolation(t *testing.T) {
 }
 func TestCancelledFetchDoesNotCountQueuedRepositoriesAsFailures(t *testing.T) {
 	s := NewGitService()
+	setTestConcurrency(t, s, 1)
 	root := t.TempDir()
 	started := make(chan struct{})
 	for _, name := range []string{"first", "queued"} {
