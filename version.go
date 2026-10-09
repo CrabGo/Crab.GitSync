@@ -1,6 +1,6 @@
 package main
 
 // Version is overridden by the release build using -X main.Version=<tag>.
-var Version = "0.4.2"
+var Version = "0.5.0"
 
 const ReleaseRepository = "CrabGo/Crab.GitSync"
