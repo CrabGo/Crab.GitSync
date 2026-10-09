@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.5.0'
+    [string]$Version = '0.5.1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,7 +27,7 @@ try {
 
     wails3 generate bindings -ts -i
     if ($LASTEXITCODE -ne 0) { throw 'Binding generation failed' }
-    go test ./...
+    go test ./... -count=1 -timeout=150s
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed' }
     go vet ./...
     if ($LASTEXITCODE -ne 0) { throw 'Go vet failed' }
