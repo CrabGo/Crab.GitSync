@@ -27,6 +27,8 @@ discardservice_test.go 覆盖明确确认、空选择、扫描范围、共享读
 
 ## 发布状态与验证边界
 
-P14–P16 功能完成，M3 v0.6.0 尚待版本准备、本地发布构建、线上工作流和公开附件/日志/哈希验证。当前开发版本仍为 0.5.1；本文件不代表 M3 已发布。
+P14–P16 已随 [v0.6.0](https://github.com/CrabGo/Crab.GitSync/releases/tag/v0.6.0) 正式发布。版本提交 29a900a，新标签 v0.6.0 不覆盖旧版本。2026-10-09 执行 release.ps1 -Version 0.6.0，通过 npm ci/build、绑定生成、无缓存全量 Go 测试（180 秒包级超时）、vet 和 Windows 构建；另运行根包 M3 定时/远端选择/备份服务竞态检查通过。本地 EXE 数值版本 0.6.0.0，同版本 CHANGELOG.md 与 releases/v0.6.0.md 字节一致。
+
+[工作流 37928816102](https://github.com/CrabGo/Crab.GitSync/actions/runs/37928816102) 构建和发布均成功，正式 Release 非草稿、非预发布，正文与源文件逐字一致。附件 EXE 12993024 字节、SHA256SUMS 98 字节、CHANGELOG.md 2086 字节，全部上传完成。实际公开 provider 不带认证，从 0.5.1 检查识别 0.6.0，读取同标签说明并与源文件比较一致；下载文件实际摘要与线上 SHA256SUMS 一致：df0b0a5d53f944552ee23084f4cdd7080e6fa90d3c79d99581ea28b9571b1f77。线上 EXE 数值版本 0.6.0.0；以 0.6.0 检查返回无更新。未进行安装替换或 Restart。
 
 浏览器验收不代替 Windows 原生托盘位置、系统通知横幅/点击、外部目录/终端启动、剪贴板及实际更新替换重启。这些系统交互仍未完成原生操作验收，没有调用开发者主应用的 Restart。
