@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -63,6 +64,6 @@ func (s *GitService) StartScanList(id string) error {
 	s.state.ScanListID = id
 	s.state.Repositories = nil
 	s.logLocked("info", fmt.Sprintf("开始扫描列表「%s」：%d 个根目录，%d 条排除目录", selected.Name, len(selected.Roots), len(selected.Excludes)))
-	go s.scanPaths(ctx, selected.Roots, selected.Excludes)
+	s.launch(ctx, nil, func(ctx context.Context) error { return s.scanPaths(ctx, selected.Roots, selected.Excludes) })
 	return nil
 }

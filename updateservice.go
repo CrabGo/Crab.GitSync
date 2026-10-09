@@ -210,6 +210,11 @@ func (s *UpdateService) Restart() error {
 		s.git.mu.Unlock()
 		return fmt.Errorf("请等待 Git 任务完成，并确保更新已经下载及校验")
 	}
+	if !s.git.scheduler.Pause() {
+		s.mu.Unlock()
+		s.git.mu.Unlock()
+		return fmt.Errorf("请等待所有 Git 工作和状态读取结束后重启更新")
+	}
 	s.git.restarting = true
 	s.state.Busy, s.state.Phase = true, "restarting"
 	s.mu.Unlock()
@@ -217,6 +222,7 @@ func (s *UpdateService) Restart() error {
 	if err := s.app.Updater.Restart(s.ctx); err != nil {
 		s.git.mu.Lock()
 		s.git.restarting = false
+		s.git.scheduler.Resume()
 		s.git.mu.Unlock()
 		s.mu.Lock()
 		s.state.Busy = false

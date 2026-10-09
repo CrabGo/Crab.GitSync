@@ -11,6 +11,7 @@ import (
 
 	"crab.gitsync/internal/gitengine"
 	"crab.gitsync/internal/scansettings"
+	"crab.gitsync/internal/taskqueue"
 	"crab.gitsync/internal/taskresult"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -63,6 +64,7 @@ type GitService struct {
 	fetchTimes        map[string]string
 	scanLists         *scansettings.Store
 	scanLoadError     error
+	scheduler         *taskqueue.Scheduler
 }
 
 type autoRetryKey struct{}
@@ -79,7 +81,7 @@ func waitRetry(ctx context.Context, delay time.Duration) error {
 }
 
 func NewGitService() *GitService {
-	return &GitService{fetchTimes: map[string]string{}, waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
+	return &GitService{scheduler: taskqueue.New(), fetchTimes: map[string]string{}, waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
 }
 
 // ChooseDirectory opens the native directory picker. An empty result means cancelled.
@@ -163,7 +165,10 @@ func (s *GitService) begin(kind, root, phase string) (context.Context, error) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, fmt.Errorf("未找到 Git，请安装 Git 并添加到 PATH")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel, err := s.scheduler.Begin(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	if s.proxyURL != nil {
 		ctx = gitengine.WithProxy(ctx, s.proxyURL())
 	}
@@ -199,15 +204,11 @@ func (s *GitService) StartScan(root string) error {
 	}
 	s.state.Repositories = []gitengine.Repository{}
 	s.logLocked("info", "开始扫描："+abs)
-	go s.scan(ctx, abs)
+	s.launch(ctx, nil, func(ctx context.Context) error { return s.scanPaths(ctx, []string{abs}, nil) })
 	return nil
 }
 
-func (s *GitService) scan(ctx context.Context, root string) {
-	s.scanPaths(ctx, []string{root}, nil)
-}
-
-func (s *GitService) scanPaths(ctx context.Context, roots, excludes []string) {
+func (s *GitService) scanPaths(ctx context.Context, roots, excludes []string) error {
 	paths, err := gitengine.DiscoverMany(ctx, roots, excludes, func(count int, path string) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -219,8 +220,7 @@ func (s *GitService) scanPaths(ctx context.Context, roots, excludes []string) {
 		s.logLocked("warn", message)
 	})
 	if err != nil {
-		s.finish(ctx, err)
-		return
+		return err
 	}
 	s.mu.Lock()
 	s.state.Phase, s.state.Total = "inspecting", len(paths)
@@ -234,7 +234,12 @@ func (s *GitService) scanPaths(ctx context.Context, roots, excludes []string) {
 		s.state.Current = path
 		s.mu.Unlock()
 		started := time.Now()
-		repo, err := gitengine.Inspect(ctx, path)
+		var repo gitengine.Repository
+		err := s.scheduler.Do(ctx, repositoryKeys(path), func(ctx context.Context) error {
+			var inspectErr error
+			repo, inspectErr = s.inspectRepository(ctx, path)
+			return inspectErr
+		})
 		result := taskresult.Result{TaskID: s.state.TaskID, Kind: "scan", Path: path, Branch: repo.Branch, Stage: "inspect", Status: "success", Attempts: 1, StartedAt: started.Format(time.RFC3339Nano), FinishedAt: time.Now().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(), Failure: taskresult.Wrap(err, "inspect")}
 		if ctx.Err() != nil {
 			result.Status = "cancelled"
@@ -262,7 +267,7 @@ func (s *GitService) scanPaths(ctx context.Context, roots, excludes []string) {
 		s.recordResultLocked(result)
 		s.mu.Unlock()
 	}
-	s.finish(ctx, nil)
+	return nil
 }
 
 // StartFetch accepts only repositories from the current scan, deduplicating selections.
@@ -314,7 +319,11 @@ func (s *GitService) startFetchLocked(paths []string, refreshOnly map[string]boo
 		s.logLocked("info", "重试失败仓库，来源任务："+sourceTaskID)
 	}
 	s.logLocked("info", fmt.Sprintf("开始获取 %d 个仓库的远端更新，工作区保持不变", len(selected)))
-	go s.fetch(ctx, selected, refreshOnly)
+	keys := make([]string, 0, len(selected))
+	for _, repo := range selected {
+		keys = append(keys, repositoryKeys(repo.Path)...)
+	}
+	s.launch(ctx, keys, func(ctx context.Context) error { return s.fetch(ctx, selected, refreshOnly) })
 	return nil
 }
 
@@ -336,7 +345,7 @@ func (s *GitService) updateRepoLocked(path string, status, message string, refre
 	}
 }
 
-func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, refreshOnly map[string]bool) {
+func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, refreshOnly map[string]bool) error {
 	for _, repo := range repos {
 		if ctx.Err() != nil {
 			break
@@ -420,7 +429,7 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 		s.recordResultLocked(result)
 		s.mu.Unlock()
 	}
-	s.finish(ctx, nil)
+	return nil
 }
 
 // fetchWithRetry never retries authentication, TLS, repository-state or refresh errors.
@@ -484,6 +493,7 @@ func (s *GitService) recordResultLocked(result taskresult.Result) {
 func (s *GitService) finish(ctx context.Context, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.scheduler.End()
 	defer s.cancel()
 	defer func() {
 		if s.notify != nil {
@@ -537,6 +547,17 @@ func (s *GitService) Cancel() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Busy && s.cancel != nil {
+		s.state.Phase = "cancelling"
 		s.cancel()
 	}
+	s.scheduler.Cancel()
+}
+
+// launch is the single dispatch and completion boundary for every asynchronous Git task.
+func (s *GitService) launch(ctx context.Context, keys []string, run func(context.Context) error) {
+	go func() { err := s.scheduler.Do(ctx, keys, run); s.finish(ctx, err) }()
+}
+
+func repositoryKeys(path string) []string {
+	return []string{scansettings.PathKey(path), scansettings.PathKey(gitengine.CommonDirectory(path))}
 }

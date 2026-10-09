@@ -21,31 +21,52 @@ func (s *GitService) scannedRepository(path string) (gitengine.Repository, error
 }
 
 func (s *GitService) GetBranches(path string) ([]string, error) {
-	s.mu.Lock()
-	repo, err := s.scannedRepository(path)
-	s.mu.Unlock()
+	repo, ctx, release, err := s.readRepository(path, 20*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	return gitengine.Branches(ctx, repo.Path)
+	defer release()
+	var branches []string
+	err = s.scheduler.Do(ctx, repositoryKeys(repo.Path), func(ctx context.Context) error {
+		var readErr error
+		branches, readErr = gitengine.Branches(ctx, repo.Path)
+		return readErr
+	})
+	return branches, err
+}
+
+func (s *GitService) readRepository(path string, timeout time.Duration) (gitengine.Repository, context.Context, func(), error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	repo, err := s.scannedRepository(path)
+	if err != nil {
+		return repo, nil, nil, err
+	}
+	if s.state.Busy || s.restarting {
+		return repo, nil, nil, fmt.Errorf("已有任务正在运行，请稍后读取")
+	}
+	parent, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, release, err := s.scheduler.Read(parent)
+	if err != nil {
+		cancel()
+		return repo, nil, nil, err
+	}
+	return repo, ctx, func() { release(); cancel() }, nil
 }
 
 // PreviewMerge is read-only and validates the current scanned scope.
 func (s *GitService) PreviewMerge(path, action, target string) (gitengine.MergePreview, error) {
-	s.mu.Lock()
-	repo, err := s.scannedRepository(path)
-	if err == nil && (s.state.Busy || s.restarting) {
-		err = fmt.Errorf("已有任务正在运行，请稍后预览")
-	}
-	s.mu.Unlock()
+	repo, ctx, release, err := s.readRepository(path, 30*time.Second)
 	if err != nil {
 		return gitengine.MergePreview{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	preview, err := gitengine.PreviewMerge(ctx, repo.Path, action, target)
+	defer release()
+	var preview gitengine.MergePreview
+	err = s.scheduler.Do(ctx, repositoryKeys(repo.Path), func(ctx context.Context) error {
+		var readErr error
+		preview, readErr = gitengine.PreviewMerge(ctx, repo.Path, action, target)
+		return readErr
+	})
 	if err == nil && preview.Branch != repo.Branch {
 		err = fmt.Errorf("当前分支已变化，请重新扫描")
 	}
@@ -102,9 +123,10 @@ func (s *GitService) startAction(path, action, target string, confirmed bool, pr
 	}
 	s.state.Total = 1
 	s.state.Current = path
+	s.recordResultLocked(taskresult.Result{TaskID: s.state.TaskID, Kind: action, Path: path, Branch: repo.Branch, Stage: "queued", Status: "queued"})
 	s.updateRepoLocked(path, "operating", "", nil)
 	s.logLocked("info", fmt.Sprintf("%s：%s · 当前分支 %s · 目标 %s", label, repo.Path, repo.Branch, target))
-	go func() {
+	s.launch(ctx, repositoryKeys(path), func(ctx context.Context) error {
 		started := time.Now()
 		var output string
 		var actionErr error
@@ -167,7 +189,7 @@ func (s *GitService) startAction(path, action, target string, confirmed bool, pr
 			s.logLocked("success", label+"完成："+output)
 		}
 		s.mu.Unlock()
-		s.finish(ctx, actionErr)
-	}()
+		return actionErr
+	})
 	return nil
 }

@@ -11,7 +11,7 @@ import type { Repository } from '../bindings/crab.gitsync/internal/gitengine/mod
 import './App.css'
 
 const initial: State = { taskID:'',sourceTaskID:'',scanListID:'',results:[],busy: false, kind: '', phase: 'idle', root: '', current: '', visited: 0, completed: 0, total: 0, succeeded: 0, failed: 0, skipped: 0, startedAt: '', finishedAt: '', repositories: [], logs: [] }
-const phases: Record<string, string> = { idle: '等待扫描', discovering: '正在发现仓库', inspecting: '正在读取仓库信息', fetching: '正在获取远端更新', operating: '正在执行仓库操作', done: '任务已完成', cancelled: '任务已取消', error: '任务失败' }
+const phases: Record<string, string> = { idle: '等待扫描', discovering: '正在发现仓库', inspecting: '正在读取仓库信息', fetching: '正在获取远端更新', operating: '正在执行仓库操作', done: '任务已完成', cancelling: '正在取消，等待在途工作结束', cancelled: '任务已取消', error: '任务失败' }
 const levels: Record<string, string> = { info: '信息', success: '成功', warn: '警告', error: '错误' }
 function Icon({ name, size = 18 }: { name: string, size?: number }) {
   const paths: Record<string, React.ReactNode> = {
