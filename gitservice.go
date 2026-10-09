@@ -47,6 +47,7 @@ type GitService struct {
 	logID      int
 	restarting bool
 	notify     func(string, string, string)
+	proxyURL   func() string
 }
 
 func NewGitService() *GitService {
@@ -90,6 +91,9 @@ func (s *GitService) begin(kind, root, phase string) (context.Context, error) {
 		return nil, fmt.Errorf("未找到 Git，请安装 Git 并添加到 PATH")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	if s.proxyURL != nil {
+		ctx = gitengine.WithProxy(ctx, s.proxyURL())
+	}
 	s.cancel = cancel
 	repos, logs := s.state.Repositories, s.state.Logs
 	s.state = State{Busy: true, Kind: kind, Phase: phase, Root: root, StartedAt: time.Now().Format(time.RFC3339), Repositories: repos, Logs: logs}

@@ -14,6 +14,14 @@ import (
 	"time"
 )
 
+type proxyKey struct{}
+
+// WithProxy snapshots an application proxy for the complete Git task. An empty
+// value preserves the existing Git/environment network configuration.
+func WithProxy(ctx context.Context, proxy string) context.Context {
+	return context.WithValue(ctx, proxyKey{}, proxy)
+}
+
 type Remote struct {
 	Name   string `json:"name"`
 	URL    string `json:"url"`
@@ -41,7 +49,13 @@ type Repository struct {
 func Run(ctx context.Context, path string, timeout time.Duration, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", path}, args...)...)
+	prefix := []string{"-C", path}
+	if proxy, ok := ctx.Value(proxyKey{}).(string); ok && proxy != "" {
+		prefix = append(prefix, "-c", "http.proxy="+proxy)
+		// URL-specific Git proxy settings otherwise override the generic setting.
+		prefix = append(prefix, "-c", "http.https://github.com.proxy="+proxy)
+	}
+	cmd := exec.CommandContext(ctx, "git", append(prefix, args...)...)
 	configureProcess(cmd)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never", "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=15", "GIT_OPTIONAL_LOCKS=0")
 	cmd.WaitDelay = 2 * time.Second

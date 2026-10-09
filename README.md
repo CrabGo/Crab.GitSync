@@ -88,10 +88,14 @@ wails3 generate bindings -ts -i
 
 更新要求安装目录可写；如果放在需要管理员权限的目录中，可从 Releases 手动下载覆盖。更新替换、失败恢复与重启使用 Wails 内置 updater helper。扫描路径保留在应用的本地存储中。
 
+### 代理配置
+
+侧栏「网络设置」可启用并保存 HTTP / SOCKS5 代理。默认启用 `http://127.0.0.1:33210`，需先启动本机代理程序。HTTPS 仓库远端获取、应用更新检查与下载共享该配置；SSH 仓库沿用本机 SSH 配置。关闭应用代理后沿用原有 Git、系统及环境变量配置。配置保存在用户配置目录的 `Crab.GitSync/network.json`，不会修改 Git 或系统代理设置。新请求使用保存后的配置，运行中的 Git 任务保留启动时配置。
+
 ### 发布新版
 
 ```powershell
-./build/release.ps1 -Version 0.4.1
+./build/release.ps1 -Version 0.4.2
 ```
 
 发布前必须填写 `releases/v版本号.md`，分别列出「新增」「修改」「删除」「优化」的实际功能变化，无变化的栏目写 `- 无。`。脚本会先校验该版本的 ChangeLog，缺失或栏目为空时停止发布。GitHub Release 正文直接使用该文件，不使用自动生成的提交列表。
@@ -101,9 +105,9 @@ wails3 generate bindings -ts -i
 完成代码提交后，推送稳定版本标签，例如：
 
 ```powershell
-git tag v0.4.1
+git tag v0.4.2
 git push origin main
-git push origin v0.4.1
+git push origin v0.4.2
 ```
 
 `.github/workflows/release.yml` 在 main/PR 上执行构建检查，在版本标签上创建草稿 Release，上传程序与校验文件后一起发布，避免应用读取到文件不完整的 Release。不能覆盖已经发布的版本；修复请发布新标签。

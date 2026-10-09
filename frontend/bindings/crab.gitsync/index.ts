@@ -3,10 +3,12 @@
 
 import * as DesktopService from "./desktopservice.js";
 import * as GitService from "./gitservice.js";
+import * as NetworkService from "./networkservice.js";
 import * as UpdateService from "./updateservice.js";
 export {
     DesktopService,
     GitService,
+    NetworkService,
     UpdateService
 };
 

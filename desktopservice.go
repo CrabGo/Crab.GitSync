@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var pageTitles = map[string]string{"workspace": "仓库工作台", "logs": "任务日志", "updates": "应用更新", "help": "使用说明"}
+var pageTitles = map[string]string{"workspace": "仓库工作台", "logs": "任务日志", "updates": "应用更新", "help": "使用说明", "settings": "网络设置"}
 
 type DesktopService struct {
 	window   *application.WebviewWindow
@@ -69,7 +69,7 @@ func (s *DesktopService) attach(app *application.App, git *GitService, updates *
 	menu := app.NewMenu()
 	menu.Add("打开 Crab.GitSync").OnClick(func(*application.Context) { s.openPage("workspace") })
 	menu.AddSeparator()
-	for _, page := range []string{"workspace", "logs", "updates", "help"} {
+	for _, page := range []string{"workspace", "logs", "updates", "settings", "help"} {
 		menu.Add(pageTitles[page]).OnClick(func(*application.Context) { s.openPage(page) })
 	}
 	menu.AddSeparator()

@@ -15,3 +15,4 @@
 - Required checks: `cd frontend; npm ci; npm run build`, then from project root `go test ./...`, `go vet ./...` and `wails3 build`.
 - Batch sync and the context-menu fetch action remain fetch only. Explicit context-menu merge, discard and fetch-then-merge actions are user-authorized features; require confirmation, revalidate branch/worktree state, preserve new/untracked files during discard, and keep conflicts visible. Never mutate developer/user repositories during validation.
 - Git tests must create disposable repositories in `t.TempDir()`, never change user repositories or use live credentials.
+- `NetworkService` saves the application's proxy under the user config directory. Git tasks snapshot the proxy in their context; updater HTTP requests read it dynamically without calling Init again. Do not write global/system Git proxy settings. Proxy tests must use local test servers and temporary repositories.

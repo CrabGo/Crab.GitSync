@@ -2,6 +2,7 @@ import { Fragment as ReactFragment, useCallback, useEffect, useMemo, useRef, use
 import { GitService, UpdateService, DesktopService } from '../bindings/crab.gitsync'
 import type { State, UpdateState } from '../bindings/crab.gitsync/models'
 import UpdatePanel from './UpdatePanel'
+import NetworkPanel from './NetworkPanel'
 import RepositoryActions from './RepositoryActions'
 import type { RepositoryMenu } from './RepositoryActions'
 import type { Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
@@ -42,7 +43,7 @@ function statusOf(repo: Repository): [string, string] {
   return ['已就绪', 'green']
 }
 
-const pages = { workspace: ['仓库工作台', '扫描本地 Git 仓库，一处查看状态与获取远端更新。'], logs: ['任务日志', '查看扫描、远端更新和应用更新的运行记录。'], updates: ['应用更新', '从 GitHub Releases 检查、下载并安装新版本。'], help: ['使用说明', '了解扫描、同步、托盘和更新的使用方法。'] } as const
+const pages = { workspace: ['仓库工作台', '扫描本地 Git 仓库，一处查看状态与获取远端更新。'], logs: ['任务日志', '查看扫描、远端更新和应用更新的运行记录。'], updates: ['应用更新', '从 GitHub Releases 检查、下载并安装新版本。'], settings: ['网络设置','配置 Git 远端获取和应用更新使用的代理。'], help: ['使用说明', '了解扫描、同步、托盘和更新的使用方法。'] } as const
 type Page = keyof typeof pages
 function currentPage(): Page { const value = window.location.hash.slice(1); return value in pages ? value as Page : 'workspace' }
 function readHistory(): string[] { try { const value = JSON.parse(localStorage.getItem('crab.scanHistory') || '[]'); return Array.isArray(value) ? value.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20) : [] } catch { return [] } }
@@ -122,11 +123,12 @@ function App() {
       <div className="brand"><img className="brand-logo" src="/logo.svg" alt="Crab.GitSync Logo"/><div><strong>Crab<span>.GitSync</span></strong><small>仓库同步工具</small></div></div>
       <nav aria-label="主导航">{(['workspace','logs'] as Page[]).map(key => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon name={key === 'workspace' ? 'branch' : 'terminal'}/>{pages[key][0]}{key === 'workspace' && <span className="nav-count">{repos.length}</span>}</button>)}</nav>
       <div className="sidebar-note"><Icon name="github" size={21}/><strong>连接你的代码</strong><p>获取远端更新，让本地仓库信息保持最新。</p><span className="tag blue">批量获取 · Fetch</span></div>
-      <div className="sidebar-bottom">{(['updates','help'] as Page[]).map(key => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon name={key === 'updates' ? 'download' : 'info'}/>{pages[key][0]}{key === 'updates' && ['available','ready'].includes(update.phase) && <span className="nav-count">新</span>}</button>)}<div className="version">Crab.GitSync <span>v{update.version || '…'}</span></div></div>
+      <div className="sidebar-bottom">{(['updates','settings','help'] as Page[]).map(key => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon name={key === 'updates' ? 'download' : 'info'}/>{pages[key][0]}{key === 'updates' && ['available','ready'].includes(update.phase) && <span className="nav-count">新</span>}</button>)}<div className="version">Crab.GitSync <span>v{update.version || '…'}</span></div></div>
     </aside>
     <main>
       <header className="page-header"><div><div className="breadcrumb">工作空间 <Icon name="chevron" size={12}/> {pages[page][0]}</div><h1>{pages[page][0]}</h1><p>{pages[page][1]}</p></div><div className="connection"><i className={connected ? 'online' : ''}/>{connected ? 'Git 服务已连接' : '正在连接桌面服务'}</div></header>
       {page === 'updates' && <UpdatePanel state={update} gitBusy={state.busy} connected={connected} onChange={setUpdate}/>}
+      {page === 'settings' && <NetworkPanel connected={connected}/>}
       {page === 'help' && <section className="help-panel"><strong>如何使用</strong><p>选择或输入一个目录，递归扫描其中的仓库。勾选仓库后点击「获取远端更新」，对各仓库的全部远端执行 fetch。认证使用本机 Git 配置，需提前完成 SSH 或凭据配置。</p><p>批量获取及右键「拉取」仅执行 fetch。右键「合并」「拉取并合并」会修改工作区，执行前需要确认目标。撤销本地修改只恢复已跟踪文件，保留新增文件与本地提交。扫描跳过 .git、node_modules、.venv，不跟随子目录符号链接。领先／落后数基于本地跟踪分支，fetch 后刷新。日志保留最近 500 条。</p><p>路径会记住上次选择，历史路径下拉保留最近 20 个目录。切换菜单不会中断正在进行的任务。</p><p>关闭窗口后应用继续在托盘运行。单击托盘恢复窗口，右键打开菜单，可取消任务或退出。任务完成和发现更新时会发送系统通知；点击通知可打开对应页面。</p><p>应用启动时及每 6 小时检查 GitHub Releases。公开仓库更新无需登录或配置令牌。下载完成后校验 SHA-256，点击重启安装。</p></section>}
       {error && <div className="error-banner" role="alert"><Icon name="info"/><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
       {page === 'workspace' && <>

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -39,6 +40,21 @@ func NewHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = proxyForRequest()
 	return &http.Client{Transport: transport, Timeout: 5 * time.Minute}
+}
+
+// NewHTTPClientWithProxy reads saved settings for each request so changing the
+// proxy never requires reinitialising the Wails updater.
+func NewHTTPClientWithProxy(proxy func() *url.URL) *http.Client {
+	client := NewHTTPClient()
+	transport := client.Transport.(*http.Transport)
+	fallback := transport.Proxy
+	transport.Proxy = func(req *http.Request) (*url.URL, error) {
+		if configured := proxy(); configured != nil {
+			return configured, nil
+		}
+		return fallback(req)
+	}
+	return client
 }
 
 type GitHubProvider struct {

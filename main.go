@@ -1,11 +1,16 @@
 package main
 
 import (
+	"crab.gitsync/internal/networksettings"
+	"crab.gitsync/internal/updatefeed"
 	"embed"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 	"log"
+	"net/url"
+	"os"
+	"path/filepath"
 )
 
 //go:embed all:frontend/dist
@@ -15,8 +20,22 @@ var assets embed.FS
 var appIcon []byte
 
 func main() {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	store, loadErr := networksettings.New(filepath.Join(configDir, "Crab.GitSync", "network.json"))
+	network := &NetworkService{store: store, loadError: loadErr}
+	proxy := func() *url.URL { value, _ := store.Get().URL(); return value }
 	service := NewGitService()
+	service.proxyURL = func() string {
+		if value := proxy(); value != nil {
+			return value.String()
+		}
+		return ""
+	}
 	updates := NewUpdateService(service)
+	updates.provider = updatefeed.NewPublicGitHub(ReleaseRepository, "", updatefeed.NewHTTPClientWithProxy(proxy))
 	desktop := &DesktopService{notifier: notifications.New()}
 	service.notify = desktop.notify
 	updates.notify = desktop.notify
@@ -30,7 +49,7 @@ func main() {
 				desktop.window.Focus()
 			}
 		}},
-		Services: []application.Service{application.NewService(service), application.NewService(updates), application.NewService(desktop)},
+		Services: []application.Service{application.NewService(service), application.NewService(updates), application.NewService(desktop), application.NewService(network)},
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		Mac:      application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	})
