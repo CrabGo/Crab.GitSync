@@ -31,3 +31,7 @@
 - 诊断测试隔离系统/全局 Git 配置，避免本机凭据助手介入本地 401 场景。
 - 错误 URL 脱敏保留外层引号，避免将日志标点误编码到地址中；Git 和 HTTP 共用脱敏逻辑。
 - 无效桌面页面路由不恢复窗口或执行 JavaScript，窗口尚未创建时安全返回。
+
+## P08 线上发布结果
+
+v0.5.0 已正式发布：[发布页面](https://github.com/CrabGo/Crab.GitSync/releases/tag/v0.5.0)，[构建流程](https://github.com/CrabGo/Crab.GitSync/actions/runs/37913769259) 成功。发布正文与 `releases/v0.5.0.md` 完全一致。公开 provider 无凭据识别新版、下载 EXE，实际 SHA256 与线上 SHA256SUMS 一致：`fd2d6902c663ac3ffe4ba0d256ce8cc7354176a2bcbfac9e57e3645b77ade96f`。在线 EXE 数值文件版本为 0.5.0.0；当前版本检查返回无更新，没有执行安装替换或 Restart。
