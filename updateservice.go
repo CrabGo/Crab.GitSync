@@ -37,6 +37,7 @@ type UpdateService struct {
 	ctx     context.Context
 	stop    context.CancelFunc
 	cancel  context.CancelFunc
+	notify  func(string, string, string)
 }
 
 func NewUpdateService(git *GitService) *UpdateService {
@@ -154,8 +155,14 @@ func (s *UpdateService) finish(ctx context.Context, phase string, err error) {
 	switch phase {
 	case "available":
 		s.log("info", "发现新版本 v"+latest)
+		if s.notify != nil {
+			s.notify("发现新版本", "Crab.GitSync v"+latest+" 可下载更新", "updates")
+		}
 	case "ready":
 		s.log("success", "下载与 SHA-256 校验完成，可重启应用更新")
+		if s.notify != nil {
+			s.notify("更新已准备就绪", "下载和校验完成，请在应用更新页面重启安装", "updates")
+		}
 	case "up-to-date":
 		s.log("info", "没有可用的新版本")
 	}

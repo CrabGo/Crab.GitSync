@@ -46,6 +46,7 @@ type GitService struct {
 	cancel     context.CancelFunc
 	logID      int
 	restarting bool
+	notify     func(string, string, string)
 }
 
 func NewGitService() *GitService {
@@ -274,6 +275,16 @@ func (s *GitService) finish(ctx context.Context, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer s.cancel()
+	defer func() {
+		if s.notify != nil {
+			title := "扫描任务"
+			if s.state.Kind == "fetch" {
+				title = "远端更新任务"
+			}
+			message := fmt.Sprintf("%s：成功 %d，错误/警告 %d，跳过 %d", phasesForNotification(s.state.Phase), s.state.Succeeded, s.state.Failed, s.state.Skipped)
+			go s.notify(title, message, "logs")
+		}
+	}()
 	s.state.Busy = false
 	s.state.FinishedAt = time.Now().Format(time.RFC3339)
 	switch {
@@ -287,6 +298,10 @@ func (s *GitService) finish(ctx context.Context, err error) {
 		s.state.Phase = "done"
 		s.logLocked("info", fmt.Sprintf("任务完成：成功 %d，错误/警告 %d，跳过 %d", s.state.Succeeded, s.state.Failed, s.state.Skipped))
 	}
+}
+
+func phasesForNotification(phase string) string {
+	return map[string]string{"done": "已完成", "error": "失败", "cancelled": "已取消"}[phase]
 }
 
 // Cancel stops the running task. Fetch operations already completed are retained.

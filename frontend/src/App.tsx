@@ -1,5 +1,5 @@
 import { Fragment as ReactFragment, useEffect, useMemo, useRef, useState } from 'react'
-import { GitService, UpdateService } from '../bindings/crab.gitsync'
+import { GitService, UpdateService, DesktopService } from '../bindings/crab.gitsync'
 import type { State, UpdateState } from '../bindings/crab.gitsync/models'
 import UpdatePanel from './UpdatePanel'
 import type { Repository } from '../bindings/crab.gitsync/internal/gitengine/models'
@@ -37,10 +37,15 @@ function statusOf(repo: Repository): [string, string] {
   return ['已就绪', 'green']
 }
 
+const pages = { workspace: ['仓库工作台', '扫描本地 Git 仓库，一处查看状态与获取远端更新。'], logs: ['任务日志', '查看扫描、远端更新和应用更新的运行记录。'], updates: ['应用更新', '从 GitHub Releases 检查、下载并安装新版本。'], help: ['使用说明', '了解扫描、同步、托盘和更新的使用方法。'] } as const
+type Page = keyof typeof pages
+function currentPage(): Page { const value = window.location.hash.slice(1); return value in pages ? value as Page : 'workspace' }
+function readHistory(): string[] { try { const value = JSON.parse(localStorage.getItem('crab.scanHistory') || '[]'); return Array.isArray(value) ? value.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20) : [] } catch { return [] } }
 function App() {
   const [state, setState] = useState<State>(initial)
   const [update, setUpdate] = useState<UpdateState>({version:'',repository:'',platform:'',phase:'idle',busy:false,latestVersion:'',notes:'',written:0,total:0,authSource:'',checkedAt:'',error:''})
-  const [showUpdates,setShowUpdates] = useState(false)
+  const [page,setPage] = useState<Page>(currentPage)
+  const [history,setHistory] = useState<string[]>(readHistory)
   const [path, setPath] = useState(() => localStorage.getItem('crab.scanPath') || '')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
@@ -49,12 +54,10 @@ function App() {
   const [error, setError] = useState('')
   const [connected, setConnected] = useState(false)
   const [pending, setPending] = useState(false)
-  const [help, setHelp] = useState(false)
   const [logFilter, setLogFilter] = useState('all')
   const [logCutoff, setLogCutoff] = useState(0)
   const [follow, setFollow] = useState(true)
   const logBody = useRef<HTMLDivElement>(null)
-  const logSection = useRef<HTMLElement>(null)
   const allCheck = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -72,7 +75,11 @@ function App() {
     void poll()
     return () => { stopped = true; clearTimeout(timer) }
   }, [])
-  useEffect(() => { localStorage.setItem('crab.scanPath', path) }, [path])
+  useEffect(() => { const change = () => {setPage(currentPage()); window.scrollTo(0,0)}; window.addEventListener('hashchange',change); return () => window.removeEventListener('hashchange',change) }, [])
+  useEffect(() => { document.title = `${pages[page][0]} · Crab.GitSync`; if (connected) void DesktopService.SetPage(page).catch(e => setError(String(e))) }, [page,connected])
+  const navigate = (next: Page) => {window.location.hash = next; setPage(next); window.scrollTo(0,0)}
+  const remember = (value: string) => { const next = [value,...history.filter(x => x.toLowerCase() !== value.toLowerCase())].slice(0,20); setHistory(next); try {localStorage.setItem('crab.scanPath',value); localStorage.setItem('crab.scanHistory',JSON.stringify(next))} catch {setError('无法保存路径历史，请检查应用存储空间')} }
+
   const repos = state.repositories || []
   const visible = useMemo(() => repos.filter(r => {
     const matches = `${r.name} ${r.path} ${r.branch} ${r.remotes?.map(x => x.url).join(' ')}`.toLowerCase().includes(query.toLowerCase())
@@ -83,7 +90,7 @@ function App() {
   useEffect(() => { if (allCheck.current) allCheck.current.indeterminate = !allSelected && visible.some(r => selected.has(r.path)) }, [visible, selected, allSelected])
   const logs = (state.logs || []).filter(l => l.id > logCutoff && (logFilter === 'all' || l.level === logFilter))
   const lastLogID = logs.slice(-1)[0]?.id
-  useEffect(() => { if (follow && logBody.current) logBody.current.scrollTop = logBody.current.scrollHeight }, [lastLogID, follow, logFilter])
+  useEffect(() => { if (follow && logBody.current) logBody.current.scrollTop = logBody.current.scrollHeight }, [lastLogID, follow, logFilter, page])
   const busy = state.busy || pending || update.phase === 'restarting'
   const percent = state.total ? Math.round(state.completed / state.total * 100) : state.phase === 'done' ? 100 : 0
   const elapsed = state.startedAt ? Math.max(0, Math.round((new Date(state.finishedAt || Date.now()).getTime() - new Date(state.startedAt).getTime()) / 1000)) : 0
@@ -93,8 +100,8 @@ function App() {
     setPending(true); setError('')
     try { await action(); setState(await GitService.GetState()) } catch (e) { setError(String(e)) } finally { setPending(false) }
   }
-  const scan = () => perform(async () => { await GitService.StartScan(path.trim()); setSelected(new Set()); setExpanded('') })
-  const choose = () => perform(async () => { const chosen = await GitService.ChooseDirectory(); if (chosen) setPath(chosen) })
+  const scan = () => perform(async () => { await GitService.StartScan(path.trim()); remember(path.trim()); setSelected(new Set()); setExpanded('') })
+  const choose = () => perform(async () => { const chosen = await GitService.ChooseDirectory(); if (chosen) {setPath(chosen); remember(chosen)} })
   const exportLogs = () => {
     const content = logs.map(l => `${l.time} [${levels[l.level] || l.level}] ${l.message}`).join('\n')
     const url = URL.createObjectURL(new Blob(['\ufeff' + content], { type: 'text/plain;charset=utf-8' }))
@@ -104,20 +111,21 @@ function App() {
 
   return <div className="shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-icon"><Icon name="branch" size={24}/></span><div><strong>Crab<span>.GitSync</span></strong><small>仓库同步工具</small></div></div>
-      <nav aria-label="主导航"><button className="nav-item active" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><Icon name="branch"/>仓库工作台<span className="nav-count">{repos.length}</span></button><button className="nav-item" onClick={() => logSection.current?.scrollIntoView({ behavior: 'smooth' })}><Icon name="terminal"/>任务日志</button></nav>
+      <div className="brand"><img className="brand-logo" src="/logo.svg" alt="Crab.GitSync Logo"/><div><strong>Crab<span>.GitSync</span></strong><small>仓库同步工具</small></div></div>
+      <nav aria-label="主导航">{(['workspace','logs'] as Page[]).map(key => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon name={key === 'workspace' ? 'branch' : 'terminal'}/>{pages[key][0]}{key === 'workspace' && <span className="nav-count">{repos.length}</span>}</button>)}</nav>
       <div className="sidebar-note"><Icon name="github" size={21}/><strong>连接你的代码</strong><p>获取远端更新，让本地仓库信息保持最新。</p><span className="tag blue">仅获取 · Fetch</span></div>
-      <div className="sidebar-bottom"><button className="nav-item" onClick={() => setShowUpdates(!showUpdates)} aria-expanded={showUpdates}><Icon name="download"/>应用更新{update.latestVersion && <span className="nav-count">新</span>}</button><button className="nav-item" onClick={() => setHelp(!help)} aria-expanded={help}><Icon name="info"/>使用说明</button><div className="version">Crab.GitSync <span>v{update.version || '…'}</span></div></div>
+      <div className="sidebar-bottom">{(['updates','help'] as Page[]).map(key => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon name={key === 'updates' ? 'download' : 'info'}/>{pages[key][0]}{key === 'updates' && ['available','ready'].includes(update.phase) && <span className="nav-count">新</span>}</button>)}<div className="version">Crab.GitSync <span>v{update.version || '…'}</span></div></div>
     </aside>
     <main>
-      <header className="page-header"><div><div className="breadcrumb">工作空间 <Icon name="chevron" size={12}/> 仓库工作台</div><h1>仓库工作台</h1><p>扫描本地 Git 仓库，一处查看状态与获取远端更新。</p></div><div className="connection"><i className={connected ? 'online' : ''}/>{connected ? 'Git 服务已连接' : '正在连接桌面服务'}</div></header>
-      {(showUpdates || ['available','downloading','verifying','installing','ready','restarting','error'].includes(update.phase)) && <UpdatePanel state={update} gitBusy={state.busy} connected={connected} onChange={setUpdate}/>}
-      {help && <section className="help-panel"><strong>如何使用</strong><p>选择或输入一个目录，递归扫描其中的仓库。勾选仓库后点击「获取远端更新」，对各仓库的全部远端执行 fetch。认证使用本机 Git 配置，需提前完成 SSH 或凭据配置。</p><p>不会执行 pull、merge、push 或切换分支。扫描跳过 .git、node_modules、.venv，不跟随子目录符号链接。领先／落后数基于本地跟踪分支，fetch 后刷新。日志保留最近 500 条。</p><button onClick={() => setHelp(false)}>收起说明</button></section>}
+      <header className="page-header"><div><div className="breadcrumb">工作空间 <Icon name="chevron" size={12}/> {pages[page][0]}</div><h1>{pages[page][0]}</h1><p>{pages[page][1]}</p></div><div className="connection"><i className={connected ? 'online' : ''}/>{connected ? 'Git 服务已连接' : '正在连接桌面服务'}</div></header>
+      {page === 'updates' && <UpdatePanel state={update} gitBusy={state.busy} connected={connected} onChange={setUpdate}/>}
+      {page === 'help' && <section className="help-panel"><strong>如何使用</strong><p>选择或输入一个目录，递归扫描其中的仓库。勾选仓库后点击「获取远端更新」，对各仓库的全部远端执行 fetch。认证使用本机 Git 配置，需提前完成 SSH 或凭据配置。</p><p>不会执行 pull、merge、push 或切换分支。扫描跳过 .git、node_modules、.venv，不跟随子目录符号链接。领先／落后数基于本地跟踪分支，fetch 后刷新。日志保留最近 500 条。</p><p>路径会记住上次选择，历史路径下拉保留最近 20 个目录。切换菜单不会中断正在进行的任务。</p><p>关闭窗口后应用继续在托盘运行。单击托盘恢复窗口，右键打开菜单，可取消任务或退出。任务完成和发现更新时会发送系统通知；点击通知可打开对应页面。</p><p>应用启动时及每 6 小时检查 GitHub Releases。私有仓库需要本机 GitHub CLI 登录或配置 GITSYNC_GITHUB_TOKEN。下载完成后校验 SHA-256，点击重启安装。</p></section>}
       {error && <div className="error-banner" role="alert"><Icon name="info"/><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
+      {page === 'workspace' && <>
       <section className="scan-panel" aria-labelledby="scan-heading">
         <div className="section-label"><Icon name="folder"/><h2 id="scan-heading">扫描路径</h2><span>包含子目录</span></div>
-        <div className="path-controls"><div className="path-input"><Icon name="folder"/><input aria-label="扫描路径" placeholder="选择或输入包含 Git 仓库的目录" value={path} disabled={busy} onChange={e => setPath(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && path.trim() && !busy && connected) void scan() }}/></div><button disabled={busy || !connected} onClick={() => void choose()}>选择目录</button><button className="primary" disabled={busy || !path.trim() || !connected} onClick={() => void scan()}><Icon name="scan"/>{state.busy && state.kind === 'scan' ? '扫描中…' : '扫描仓库'}</button></div>
-        <div className="scan-hint">自动识别 Git 仓库、worktree 和裸仓库。扫描仅读取本地信息。</div>
+        <div className="path-controls"><div className="path-input"><Icon name="folder"/><input list="scan-history" aria-label="扫描路径" placeholder="选择或输入包含 Git 仓库的目录" value={path} disabled={busy} onChange={e => setPath(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && path.trim() && !busy && connected) void scan() }}/></div><datalist id="scan-history">{history.map(value => <option key={value} value={value}/>)}</datalist><button disabled={busy || !connected} onClick={() => void choose()}>选择目录</button><button className="primary" disabled={busy || !path.trim() || !connected} onClick={() => void scan()}><Icon name="scan"/>{state.busy && state.kind === 'scan' ? '扫描中…' : '扫描仓库'}</button></div>
+        <div className="path-history"><label htmlFor="path-history">最近使用</label><select id="path-history" aria-label="历史扫描路径" disabled={busy || !history.length} value="" onChange={e => {if (e.target.value) {setPath(e.target.value); remember(e.target.value)}}}><option value="">选择历史路径（最近 20 个）</option>{history.map(value => <option key={value} value={value}>{value}</option>)}</select></div><div className="scan-hint">自动识别 Git 仓库、worktree 和裸仓库。扫描仅读取本地信息。</div>
         {state.phase !== 'idle' && <div className="progress-area"><div className="progress-heading"><span><i className={state.busy ? 'working-dot' : 'done-dot'}/>{phases[state.phase]}{state.phase === 'done' && state.failed > 0 ? '，部分项目需要查看日志' : ''}</span><span>{state.phase === 'discovering' ? `已遍历 ${state.visited} 个目录` : `${state.completed} / ${state.total}`}<b>{state.phase === 'discovering' ? '发现中' : `${percent}%`}</b></span></div><div className={`progress-track ${state.phase === 'discovering' ? 'indeterminate' : ''}`} role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.phase === 'discovering' ? undefined : percent}><div style={{ width: `${percent}%` }}/></div><div className="progress-bottom"><span title={state.current}>{state.current || state.root}</span><span>{elapsed} 秒{state.busy && <button className="cancel-btn" onClick={() => void perform(() => GitService.Cancel())}><Icon name="stop" size={13}/>取消任务</button>}</span></div></div>}
       </section>
       <div className="summary-row"><div><span className="stat-icon blue"><Icon name="branch"/></span><span>已发现仓库<strong>{repos.length}</strong></span></div><div><span className="stat-icon violet"><Icon name="github"/></span><span>GitHub 仓库<strong>{repos.filter(r => r.remotes?.some(x => x.github)).length}</strong></span></div><div><span className="stat-icon amber"><Icon name="folder"/></span><span>本地有修改<strong>{repos.filter(r => r.changed > 0).length}</strong></span></div><div><span className="stat-icon green"><Icon name="download"/></span><span>远端领先<strong>{repos.filter(r => r.behind > 0).length}</strong></span></div></div>
@@ -130,7 +138,8 @@ function App() {
         })}</tbody></table>{visible.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name={repos.length ? 'search' : 'branch'} size={30}/></div><h3>{repos.length ? '没有匹配的仓库' : state.busy ? '正在寻找你的仓库' : state.phase === 'done' ? '此目录中没有有效的 Git 仓库' : '从一个本地目录开始'}</h3><p>{repos.length ? '试试其他关键词或筛选条件。' : '选择扫描路径，然后点击「扫描仓库」。仓库信息将在这里显示。'}</p></div>}</div>
         <div className="table-footer"><span>显示 {visible.length} 个仓库 · 已选择 {selectedPaths.length} 个</span><span><Icon name="info" size={13}/>提交差异基于最近一次 fetch</span></div>
       </section>
-      <section className="log-panel" ref={logSection} aria-labelledby="log-heading"><div className="log-heading"><h2 id="log-heading"><Icon name="terminal"/>任务日志 <span>{logs.length}</span></h2><div><label className="follow-check"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)}/>自动滚动</label><select aria-label="日志级别" value={logFilter} onChange={e => setLogFilter(e.target.value)}><option value="all">全部级别</option>{Object.entries(levels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="text-button" disabled={!logs.length} onClick={exportLogs}>导出</button><button className="text-button" disabled={!logs.length} onClick={() => setLogCutoff((state.logs || []).slice(-1)[0]?.id || 0)}>清空显示</button></div></div><div className="log-body" ref={logBody} role="log" aria-label="任务日志内容">{logs.length ? logs.map(log => <div className="log-line" key={log.id}><time>{log.time}</time><span className={`log-level ${log.level}`}>{levels[log.level] || log.level}</span><span>{log.message}</span></div>) : <div className="log-placeholder"><span>›</span>等待任务开始，扫描和远端更新的日志将在这里显示。</div>}</div></section>
+      </>}
+      {page === 'logs' && <section className="log-panel" aria-labelledby="log-heading"><div className="log-heading"><h2 id="log-heading"><Icon name="terminal"/>任务日志 <span>{logs.length}</span></h2><div><label className="follow-check"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)}/>自动滚动</label><select aria-label="日志级别" value={logFilter} onChange={e => setLogFilter(e.target.value)}><option value="all">全部级别</option>{Object.entries(levels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="text-button" disabled={!logs.length} onClick={exportLogs}>导出</button><button className="text-button" disabled={!logs.length} onClick={() => setLogCutoff((state.logs || []).slice(-1)[0]?.id || 0)}>清空显示</button></div></div><div className="log-body" ref={logBody} role="log" aria-label="任务日志内容">{logs.length ? logs.map(log => <div className="log-line" key={log.id}><time>{log.time}</time><span className={`log-level ${log.level}`}>{levels[log.level] || log.level}</span><span>{log.message}</span></div>) : <div className="log-placeholder"><span>›</span>等待任务开始，扫描和远端更新的日志将在这里显示。</div>}</div></section>}
       <footer className="page-footer"><span><Icon name="check" size={13}/>Fetch 保留当前分支与工作区</span><span>使用本机 Git 与认证配置</span></footer>
     </main>
   </div>
