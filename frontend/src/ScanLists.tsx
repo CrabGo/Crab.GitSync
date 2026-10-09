@@ -13,7 +13,11 @@ export default function ScanLists({connected,busy,defaultPath,onScan}:{connected
   const [dirty,setDirty]=useState(false)
   const [error,setError]=useState('')
   const [removing,setRemoving]=useState(false)
-  const select=(list?:List)=>{setID(list?.id || '');setName(list?.name || '');setRoots(list?.roots?.join('\n') || defaultPath);setExcludes(list?.excludes?.join('\n') || '');setDirty(!list);setRemoving(false);setError('')}
+  const [scheduled,setScheduled]=useState(false)
+  const [intervalMinutes,setIntervalMinutes]=useState(30)
+  const [scheduleStatus,setScheduleStatus]=useState<Record<string,{nextRun:string,lastRun:string,status:string}>>({})
+  const select=(list?:List)=>{setID(list?.id || '');setName(list?.name || '');setRoots(list?.roots?.join('\n') || defaultPath);setExcludes(list?.excludes?.join('\n') || '');setScheduled(list?.scheduled || false);setIntervalMinutes(list?.intervalMinutes || 30);setDirty(!list);setRemoving(false);setError('')}
+  useEffect(()=>{if(!connected)return;let active=true;const poll=()=>{void GitService.GetSchedules().then(values=>{if(active)setScheduleStatus(Object.fromEntries((values||[]).map(value=>[value.listID,value])))}).catch(()=>{})};poll();const timer=setInterval(poll,5000);return()=>{active=false;clearInterval(timer)}},[connected])
   useEffect(()=>{
     if(!connected)return
     let active=true
@@ -27,7 +31,12 @@ export default function ScanLists({connected,busy,defaultPath,onScan}:{connected
   },[connected])
   const save=async()=>{
     setPending(true);setError('')
-    try{const saved=await GitService.SaveScanList({id,name,roots:lines(roots),excludes:lines(excludes)});setLists(await GitService.GetScanLists() || []);select(saved);try{localStorage.setItem('crab.scanList',saved.id)}catch{/* The list itself is saved by the backend. */}}catch(e){setError(String(e))}finally{setPending(false)}
+    try{const saved=await GitService.SaveScanList({id,name,roots:lines(roots),excludes:lines(excludes),scheduled,intervalMinutes});setLists(await GitService.GetScanLists() || []);select(saved);try{localStorage.setItem('crab.scanList',saved.id)}catch{/* The list itself is saved by the backend. */}}catch(e){setError(String(e))}finally{setPending(false)}
+  }
+  const saveSchedule=async(enabled:boolean,applyInterval=true)=>{
+    const base=lists.find(value=>value.id===id);if(!base)return
+    setPending(true);setError('')
+    try{const saved=await GitService.SaveScanList({...base,scheduled:enabled,intervalMinutes:!applyInterval&&!enabled?base.intervalMinutes:intervalMinutes});setScheduled(saved.scheduled);setIntervalMinutes(saved.intervalMinutes);setLists(old=>old.map(value=>value.id===id?saved:value));const states=await GitService.GetSchedules();setScheduleStatus(Object.fromEntries((states||[]).map(value=>[value.listID,value])))}catch(e){setError(String(e))}finally{setPending(false)}
   }
   const remove=async()=>{
     setPending(true);setError('')
@@ -51,6 +60,13 @@ export default function ScanLists({connected,busy,defaultPath,onScan}:{connected
       <p className="scan-hint">排除目录填写相对于每个根目录的路径或绝对路径，不支持通配符。默认继续跳过 .git、node_modules、.venv，不跟随子目录符号链接。</p>
       <div className="scan-list-controls"><button onClick={()=>void choose()}>添加目录</button><button disabled={!name.trim()||!lines(roots).length} onClick={()=>void save()}>保存扫描列表</button><button disabled={!id} onClick={()=>setRemoving(true)}>删除列表</button><button className="primary" disabled={!id||dirty} onClick={()=>void scan()}>扫描此列表</button>{dirty&&<small>保存后可扫描</small>}</div>
       {removing&&<div className="scan-list-controls"><span>确认删除「{name}」？仓库和路径历史将保留。</span><button onClick={()=>setRemoving(false)}>取消删除</button><button onClick={()=>void remove()}>确认删除列表</button></div>}
+    </fieldset>
+    <fieldset disabled={pending||!connected||!id} className="schedule-controls">
+      <label><input type="checkbox" aria-label="启用此列表定时获取" checked={scheduled} onChange={e=>void saveSchedule(e.target.checked,false)}/>定时获取此列表（默认关闭）</label>
+      <label>间隔（分钟）<input type="number" aria-label="定时获取间隔" min={1} max={1440} value={intervalMinutes} onChange={e=>setIntervalMinutes(Number(e.target.value))}/></label>
+      <button disabled={intervalMinutes<1||intervalMinutes>1440||!Number.isInteger(intervalMinutes)} onClick={()=>void saveSchedule(scheduled)}>保存定时间隔</button>
+      <p className="scan-hint">只自动 fetch，不合并或撤销。忙碌时跳过；休眠恢复后不补跑积压任务。关闭立即停止后续调度，已开始任务可用取消按钮停止。仅失败或发现远端新提交时通知。</p>
+      {id&&<p role="status">{({disabled:'已关闭',waiting:'等待执行',running:'正在定时获取','busy-skip':'上次到期时忙碌，已跳过',done:'上次已完成',error:'上次有错误，请查看日志',cancelled:'上次已取消'} as Record<string,string>)[scheduleStatus[id]?.status]||'等待加载'}{scheduleStatus[id]?.nextRun&&` · 下次 ${new Date(scheduleStatus[id].nextRun).toLocaleString('zh-CN')}`}</p>}
     </fieldset>
     {error&&<p className="update-error" role="alert">{error}</p>}
   </details></section>

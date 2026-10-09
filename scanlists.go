@@ -25,6 +25,7 @@ func (s *GitService) SaveScanList(list scansettings.List) (scansettings.List, er
 	saved, err := s.scanLists.Save(list)
 	if err == nil {
 		s.scanLoadError = nil
+		s.resetScheduleLocked(saved)
 	}
 	return saved, err
 }
@@ -38,6 +39,7 @@ func (s *GitService) RemoveScanList(id string) error {
 		return err
 	}
 	s.scanLoadError = nil
+	delete(s.schedules, id)
 	return nil
 }
 func (s *GitService) StartScanList(id string) error {

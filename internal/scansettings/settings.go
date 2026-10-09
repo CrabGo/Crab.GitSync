@@ -13,10 +13,12 @@ import (
 )
 
 type List struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Roots    []string `json:"roots"`
-	Excludes []string `json:"excludes"`
+	Scheduled       bool     `json:"scheduled"`
+	IntervalMinutes int      `json:"intervalMinutes"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Roots           []string `json:"roots"`
+	Excludes        []string `json:"excludes"`
 }
 type Store struct {
 	mu    sync.Mutex
@@ -38,6 +40,12 @@ func PathKey(path string) string {
 	return path
 }
 func Normalize(list List) (List, error) {
+	if list.IntervalMinutes == 0 {
+		list.IntervalMinutes = 30
+	}
+	if list.IntervalMinutes < 1 || list.IntervalMinutes > 1440 {
+		return list, fmt.Errorf("定时获取间隔需为 1–1440 分钟")
+	}
 	list.Name = strings.TrimSpace(list.Name)
 	if list.Name == "" || len([]rune(list.Name)) > 80 {
 		return list, fmt.Errorf("扫描列表名称需为 1–80 个字符")

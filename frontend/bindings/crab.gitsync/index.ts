@@ -14,6 +14,7 @@ export {
 
 export type {
     LogEntry,
+    ScheduleState,
     State,
     UpdateState
 } from "./models.js";

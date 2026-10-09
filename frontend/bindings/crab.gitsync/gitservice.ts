@@ -63,6 +63,10 @@ export function GetScanLists(): $CancellablePromise<scansettings$0.List[] | null
     return $Call.ByID(1918790747);
 }
 
+export function GetSchedules(): $CancellablePromise<$models.ScheduleState[] | null> {
+    return $Call.ByID(3841645263);
+}
+
 /**
  * GetState returns copies so a concurrent task cannot mutate a frontend response.
  */

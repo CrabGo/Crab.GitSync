@@ -15,7 +15,15 @@ export interface LogEntry {
     "message": string;
 }
 
+export interface ScheduleState {
+    "listID": string;
+    "nextRun": string;
+    "lastRun": string;
+    "status": string;
+}
+
 export interface State {
+    "automatic": boolean;
     "taskID": string;
     "sourceTaskID": string;
     "results": taskresult$0.Result[] | null;

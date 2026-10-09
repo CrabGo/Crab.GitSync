@@ -3,6 +3,7 @@ package scansettings
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,33 @@ func TestPersistenceNormalizationAndIsolation(t *testing.T) {
 	reloaded, err := New(path)
 	if err != nil || len(reloaded.Get()) != 0 {
 		t.Fatal("delete not persisted", err)
+	}
+}
+
+func TestLegacyListDefaultsAndScheduledReload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scans.json")
+	store, _ := New(path)
+	saved, err := store.Save(List{Name: "work", Roots: []string{t.TempDir()}})
+	if err != nil || saved.Scheduled || saved.IntervalMinutes != 30 {
+		t.Fatal(saved, err)
+	}
+	saved.Scheduled = true
+	saved.IntervalMinutes = 7
+	if _, err = store.Save(saved); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := New(path)
+	if err != nil || !loaded.Get()[0].Scheduled || loaded.Get()[0].IntervalMinutes != 7 {
+		t.Fatal("scheduled settings did not persist", err)
+	}
+	data, _ := os.ReadFile(path)
+	data = []byte(strings.ReplaceAll(strings.ReplaceAll(string(data), `"scheduled": true,`, ""), `"intervalMinutes": 7,`, ""))
+	if err = os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = New(path)
+	if err != nil || loaded.Get()[0].Scheduled || loaded.Get()[0].IntervalMinutes != 30 {
+		t.Fatal("legacy settings should remain off", err)
 	}
 }
 

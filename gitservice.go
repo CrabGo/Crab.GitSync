@@ -26,6 +26,7 @@ type LogEntry struct {
 }
 
 type State struct {
+	Automatic    bool                   `json:"automatic"`
 	TaskID       string                 `json:"taskID"`
 	SourceTaskID string                 `json:"sourceTaskID"`
 	Results      []taskresult.Result    `json:"results"`
@@ -71,6 +72,10 @@ type GitService struct {
 	taskSettingsError error
 	history           *taskhistory.Store
 	firstTaskLogID    int
+	schedules         map[string]ScheduleState
+	stopSchedules     context.CancelFunc
+	schedulesStopped  bool
+	scheduledNew      int
 }
 
 type autoRetryKey struct{}
@@ -522,6 +527,17 @@ func (s *GitService) finish(ctx context.Context, err error) {
 	defer s.cancel()
 	defer func() {
 		if s.notify != nil {
+			if s.state.Automatic {
+				if s.state.Phase == "cancelled" {
+					return
+				}
+				if s.state.Failed > 0 || err != nil {
+					go s.notify("定时获取出现错误", fmt.Sprintf("错误/警告 %d，请查看任务日志", s.state.Failed), "logs")
+				} else if s.scheduledNew > 0 {
+					go s.notify("发现远端新提交", fmt.Sprintf("%d 个仓库发现新的远端提交，工作区保持不变", s.scheduledNew), "workspace")
+				}
+				return
+			}
 			title := "扫描任务"
 			if s.state.Kind == "fetch" {
 				title = "远端更新任务"
@@ -565,6 +581,12 @@ func (s *GitService) finish(ctx context.Context, err error) {
 		}
 	}
 	s.persistCompletedLocked()
+	if s.state.Automatic {
+		if schedule, ok := s.schedules[s.state.ScanListID]; ok && schedule.Status == "running" {
+			schedule.Status = scheduleFinished(s.state.Phase, s.state.Failed)
+			s.schedules[s.state.ScanListID] = schedule
+		}
+	}
 }
 
 func phasesForNotification(phase string) string {
