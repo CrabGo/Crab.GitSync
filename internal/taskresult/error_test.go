@@ -61,3 +61,14 @@ func TestRefreshFailureAndRedaction(t *testing.T) {
 		t.Fatal("successful operation created error")
 	}
 }
+
+func TestRedactionPreservesQuotedURLDelimiters(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{`Get "https://alice:secret@github.com/o/r?token=private": connection refused`, `Get "https://github.com/o/r": connection refused`},
+		{`fatal: unable to access 'https://alice:secret@github.com/o/r.git/': error`, `fatal: unable to access 'https://github.com/o/r.git/': error`},
+	} {
+		if got := Redact(tc.input); got != tc.want {
+			t.Fatalf("redaction %q != %q", got, tc.want)
+		}
+	}
+}

@@ -5,15 +5,22 @@ import (
 	"crab.gitsync/internal/networksettings"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func done(t *testing.T, r *Runner) State {
+	return doneWithin(t, r, 3*time.Second)
+}
+func doneWithin(t *testing.T, r *Runner, timeout time.Duration) State {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		s := r.State()
 		if !s.Busy {
@@ -23,6 +30,88 @@ func done(t *testing.T, r *Runner) State {
 	}
 	t.Fatal("diagnostic did not finish")
 	return State{}
+}
+
+func TestDefaultHTTPAndGitProbesStayOnLocalProxy(t *testing.T) {
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "empty-gitconfig"))
+	var connects, gitRequests atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "CONNECT" {
+			connects.Add(1)
+			w.WriteHeader(502)
+			return
+		}
+		gitRequests.Add(1)
+		w.WriteHeader(401)
+	}))
+	defer proxy.Close()
+	u, _ := url.Parse(proxy.URL)
+	port, _ := strconv.Atoi(u.Port())
+	c := networksettings.Config{Enabled: true, Protocol: "http", Host: u.Hostname(), Port: port}
+	r := New(Probes{})
+	if err := r.Start(c, "http://diagnostic-fixture.invalid/repo.git"); err != nil {
+		t.Fatal(err)
+	}
+	s := doneWithin(t, r, 25*time.Second)
+	if s.Steps[0].Status != "success" || s.Steps[1].Status != "error" || s.Steps[2].Failure == nil || s.Steps[2].Failure.Category != "authentication" || connects.Load() != 1 || gitRequests.Load() == 0 {
+		t.Fatalf("unexpected default probes: %+v", s)
+	}
+}
+
+func TestReachablePortDoesNotProveProxyProtocol(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"))
+			conn.Close()
+		}
+	}()
+	c := networksettings.Default()
+	c.Protocol = "socks5h"
+	c.Port = l.Addr().(*net.TCPAddr).Port
+	r := New(Probes{Git: func(context.Context, string, *url.URL) error { return nil }})
+	if err := r.Start(c, "https://github.com/o/r.git"); err != nil {
+		t.Fatal(err)
+	}
+	s := done(t, r)
+	if s.Steps[0].Status != "success" || s.Steps[1].Status != "error" || s.Status != "error" {
+		t.Fatal("port success incorrectly implied proxy success", s)
+	}
+}
+
+func TestHTTPTimeoutKeepsIndependentGitResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer server.Close()
+	r := New(Probes{
+		Dial: func(context.Context, string) error { return nil },
+		HTTP: func(ctx context.Context, _ *url.URL) error {
+			ctx, cancel := context.WithTimeout(ctx, 25*time.Millisecond)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, "HEAD", server.URL, nil)
+			resp, err := http.DefaultClient.Do(req)
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return err
+		},
+		Git: func(context.Context, string, *url.URL) error { return nil },
+	})
+	if err := r.Start(networksettings.Default(), "https://github.com/o/r.git"); err != nil {
+		t.Fatal(err)
+	}
+	s := done(t, r)
+	if s.Steps[1].Failure == nil || s.Steps[1].Failure.Category != "timeout" || s.Steps[2].Status != "success" || s.Status != "error" {
+		t.Fatal("timeout lost independent result", s)
+	}
 }
 func TestProbeSnapshotsAndIndependentFailures(t *testing.T) {
 	var httpCalls, gitCalls atomic.Int32

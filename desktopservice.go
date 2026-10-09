@@ -13,8 +13,16 @@ import (
 var pageTitles = map[string]string{"workspace": "仓库工作台", "logs": "任务日志", "updates": "应用更新", "help": "使用说明", "settings": "网络设置"}
 
 type DesktopService struct {
-	window   *application.WebviewWindow
+	window   desktopWindow
 	notifier *notifications.NotificationService
+}
+
+type desktopWindow interface {
+	SetTitle(string) application.Window
+	Show() application.Window
+	UnMinimise()
+	Focus()
+	ExecJS(string)
 }
 
 //wails:ignore
@@ -39,7 +47,9 @@ func (s *DesktopService) SetPage(page string) error {
 }
 
 func (s *DesktopService) openPage(page string) {
-	_ = s.SetPage(page)
+	if err := s.SetPage(page); err != nil || s.window == nil {
+		return
+	}
 	s.window.Show()
 	s.window.UnMinimise()
 	s.window.Focus()
@@ -59,10 +69,11 @@ func (s *DesktopService) notify(title, body, page string) {
 }
 
 func (s *DesktopService) attach(app *application.App, git *GitService, updates *UpdateService) {
-	s.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "仓库工作台 · Crab.GitSync", Width: 1280, Height: 850, MinWidth: 900, MinHeight: 650,
 		BackgroundColour: application.NewRGB(246, 248, 251), URL: "/",
 	})
+	s.window = window
 	tray := app.SystemTray.New()
 	tray.SetIcon(appIcon)
 	tray.SetTooltip("Crab.GitSync · 仓库同步工具")
@@ -84,7 +95,7 @@ func (s *DesktopService) attach(app *application.App, git *GitService, updates *
 	tray.SetMenu(menu)
 	tray.OnClick(func() { s.window.Show(); s.window.UnMinimise(); s.window.Focus() })
 	tray.OnRightClick(tray.ShowMenu)
-	s.window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); s.window.Hide() })
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide() })
 	s.notifier.OnNotificationResponse(func(result notifications.NotificationResult) {
 		if result.Error != nil {
 			return

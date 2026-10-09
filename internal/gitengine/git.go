@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -76,20 +75,9 @@ func Run(ctx context.Context, path string, timeout time.Duration, args ...string
 	return strings.TrimSpace(string(out)), nil
 }
 
-var urlPattern = regexp.MustCompile(`https?://[^\s]+`)
-
 // Redact removes credentials in HTTP remote URLs before displaying them.
 func Redact(value string) string {
-	return urlPattern.ReplaceAllStringFunc(value, func(s string) string {
-		u, err := url.Parse(s)
-		if err != nil {
-			return "[远端地址已隐藏]"
-		}
-		u.User = nil
-		u.RawQuery = ""
-		u.Fragment = ""
-		return u.String()
-	})
+	return taskresult.Redact(value)
 }
 
 func isGitHub(value string) bool {

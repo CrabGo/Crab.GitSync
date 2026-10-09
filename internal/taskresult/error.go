@@ -23,7 +23,7 @@ type Failure struct {
 func (f *Failure) Error() string { return f.Message + ": " + f.Detail }
 func (f *Failure) Unwrap() error { return f.cause }
 
-var urls = regexp.MustCompile(`(?i)(?:https?|socks5h?)://[^\s]+`)
+var urls = regexp.MustCompile(`(?i)(?:https?|socks5h?)://[^\s"'<>]+`)
 
 func Redact(s string) string {
 	return urls.ReplaceAllStringFunc(s, func(raw string) string {
