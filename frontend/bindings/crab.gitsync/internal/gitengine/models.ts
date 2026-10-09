@@ -21,5 +21,7 @@ export interface Repository {
     "mergeInProgress": boolean;
     "lastCommit": string;
     "fetchStatus": string;
+    "syncStatus": string;
+    "lastSuccessfulFetch": string;
     "error": string;
 }

@@ -30,20 +30,22 @@ type Remote struct {
 }
 
 type Repository struct {
-	Path            string   `json:"path"`
-	Name            string   `json:"name"`
-	Branch          string   `json:"branch"`
-	Upstream        string   `json:"upstream"`
-	Remotes         []Remote `json:"remotes"`
-	Changed         int      `json:"changed"`
-	Ahead           int      `json:"ahead"`
-	Behind          int      `json:"behind"`
-	Bare            bool     `json:"bare"`
-	Detached        bool     `json:"detached"`
-	MergeInProgress bool     `json:"mergeInProgress"`
-	LastCommit      string   `json:"lastCommit"`
-	FetchStatus     string   `json:"fetchStatus"`
-	Error           string   `json:"error"`
+	Path                string   `json:"path"`
+	Name                string   `json:"name"`
+	Branch              string   `json:"branch"`
+	Upstream            string   `json:"upstream"`
+	Remotes             []Remote `json:"remotes"`
+	Changed             int      `json:"changed"`
+	Ahead               int      `json:"ahead"`
+	Behind              int      `json:"behind"`
+	Bare                bool     `json:"bare"`
+	Detached            bool     `json:"detached"`
+	MergeInProgress     bool     `json:"mergeInProgress"`
+	LastCommit          string   `json:"lastCommit"`
+	FetchStatus         string   `json:"fetchStatus"`
+	SyncStatus          string   `json:"syncStatus"`
+	LastSuccessfulFetch string   `json:"lastSuccessfulFetch"`
+	Error               string   `json:"error"`
 }
 
 // Run invokes Git without a shell, with a deadline and interactive prompts disabled.
@@ -145,7 +147,7 @@ func Discover(ctx context.Context, root string, visit func(int, string), warn fu
 
 // Inspect validates a candidate and reads local status without accessing the network.
 func Inspect(ctx context.Context, path string) (Repository, error) {
-	r := Repository{Path: path, Name: filepath.Base(path), Remotes: []Remote{}, FetchStatus: "idle"}
+	r := Repository{Path: path, Name: filepath.Base(path), Remotes: []Remote{}, FetchStatus: "idle", SyncStatus: "unknown"}
 	run := func(args ...string) (string, error) { return Run(ctx, path, 15*time.Second, args...) }
 	bare, err := run("rev-parse", "--is-bare-repository")
 	if err != nil {
@@ -201,13 +203,24 @@ func Inspect(ctx context.Context, path string) (Repository, error) {
 			return r, err
 		}
 		r.Upstream = tracking
+		if r.Upstream == "" {
+			r.SyncStatus = "no-upstream"
+		}
 		if r.Upstream != "" {
 			counts, err := run("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
 			if err == nil {
 				parts := strings.Fields(counts)
 				if len(parts) == 2 {
-					r.Ahead, _ = strconv.Atoi(parts[0])
-					r.Behind, _ = strconv.Atoi(parts[1])
+					ahead, aheadErr := strconv.Atoi(parts[0])
+					behind, behindErr := strconv.Atoi(parts[1])
+					if aheadErr == nil && behindErr == nil && ahead >= 0 && behind >= 0 {
+						r.Ahead, r.Behind = ahead, behind
+						r.SyncStatus = relationship(ahead, behind)
+					} else {
+						r.Error = "跟踪分支提交差异格式无效"
+					}
+				} else {
+					r.Error = "无法读取跟踪分支提交差异"
 				}
 			} else {
 				r.Error = "无法比较跟踪分支：" + err.Error()
@@ -220,6 +233,19 @@ func Inspect(ctx context.Context, path string) (Repository, error) {
 		return r, ctx.Err()
 	}
 	return r, nil
+}
+
+func relationship(ahead, behind int) string {
+	switch {
+	case ahead > 0 && behind > 0:
+		return "diverged"
+	case ahead > 0:
+		return "ahead"
+	case behind > 0:
+		return "behind"
+	default:
+		return "synced"
+	}
 }
 
 // Fetch downloads every configured remote without merging or changing working files.

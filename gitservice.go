@@ -58,6 +58,7 @@ type GitService struct {
 	fetchHistoryOrder []string
 	retryEnabled      func() bool
 	waitRetry         func(context.Context, time.Duration) error
+	fetchTimes        map[string]string
 }
 
 type autoRetryKey struct{}
@@ -74,7 +75,7 @@ func waitRetry(ctx context.Context, delay time.Duration) error {
 }
 
 func NewGitService() *GitService {
-	return &GitService{waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
+	return &GitService{fetchTimes: map[string]string{}, waitRetry: waitRetry, fetchHistory: map[string][]taskresult.Result{}, fetchRepository: gitengine.Fetch, inspectRepository: gitengine.Inspect, state: State{Phase: "idle", Repositories: []gitengine.Repository{}, Logs: []LogEntry{}}}
 }
 
 // ChooseDirectory opens the native directory picker. An empty result means cancelled.
@@ -242,6 +243,7 @@ func (s *GitService) scan(ctx context.Context, root string) {
 			result.Status = "error"
 			s.logLocked("error", path+"："+err.Error())
 		} else {
+			repo.LastSuccessfulFetch = s.fetchTimes[repo.Path]
 			s.state.Repositories = append(s.state.Repositories, repo)
 			s.state.Succeeded++
 			s.logLocked("success", fmt.Sprintf("已识别 %s · %s", repo.Name, repo.Branch))
@@ -315,7 +317,11 @@ func (s *GitService) updateRepoLocked(path string, status, message string, refre
 		if refreshed != nil {
 			s.state.Repositories[i] = *refreshed
 		}
+		s.state.Repositories[i].LastSuccessfulFetch = s.fetchTimes[path]
 		s.state.Repositories[i].FetchStatus = status
+		if status == "refresh-error" {
+			s.state.Repositories[i].SyncStatus = "unknown"
+		}
 		s.state.Repositories[i].Error = message
 		break
 	}
@@ -351,6 +357,11 @@ func (s *GitService) fetch(ctx context.Context, repos []gitengine.Repository, re
 			}
 			if err == nil {
 				networkSucceeded = true
+				if !refreshOnly[repo.Path] {
+					s.mu.Lock()
+					s.fetchTimes[repo.Path] = time.Now().Format(time.RFC3339Nano)
+					s.mu.Unlock()
+				}
 				stage = "refresh"
 				r, inspectErr := s.inspectRepository(ctx, repo.Path)
 				if inspectErr != nil {
