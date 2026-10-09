@@ -29,20 +29,37 @@ type UpdateState struct {
 
 // UpdateService presents the Wails updater through the application's own UI.
 type UpdateService struct {
-	app     *application.App
-	git     *GitService
-	mu      sync.Mutex
-	state   UpdateState
-	release *updater.Release
-	ctx     context.Context
-	stop    context.CancelFunc
-	cancel  context.CancelFunc
-	notify  func(string, string, string)
+	app         *application.App
+	git         *GitService
+	mu          sync.Mutex
+	state       UpdateState
+	release     *updater.Release
+	ctx         context.Context
+	stop        context.CancelFunc
+	cancel      context.CancelFunc
+	notify      func(string, string, string)
+	provider    updater.Provider
+	initialized bool
 }
 
 func NewUpdateService(git *GitService) *UpdateService {
 	ctx, stop := context.WithCancel(context.Background())
-	return &UpdateService{git: git, ctx: ctx, stop: stop, state: UpdateState{Version: Version, Repository: ReleaseRepository, Platform: runtime.GOOS + "/" + runtime.GOARCH, Phase: "idle"}}
+	return &UpdateService{git: git, ctx: ctx, stop: stop, provider: updatefeed.NewPublicGitHub(ReleaseRepository, "", nil), state: UpdateState{Version: Version, Repository: ReleaseRepository, Platform: runtime.GOOS + "/" + runtime.GOARCH, Phase: "idle"}}
+}
+
+// initialiseUpdater configures the application updater once, independently of check outcomes.
+// A network error or cancellation must not cause the next check to call Init again.
+func (s *UpdateService) initialiseUpdater() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.initialized {
+		return nil
+	}
+	if err := s.app.Updater.Init(updater.Config{CurrentVersion: Version, Providers: []updater.Provider{s.provider}, Window: updater.WindowNone}); err != nil {
+		return err
+	}
+	s.initialized = true
+	return nil
 }
 
 func (s *UpdateService) attach(app *application.App) {
@@ -81,13 +98,9 @@ func (s *UpdateService) StartCheck() error {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		provider := updatefeed.NewPublicGitHub(ReleaseRepository, "", nil)
 		source := "公开发布源 · 无需登录"
-		var err error
+		err := s.initialiseUpdater()
 		var release *updater.Release
-		if err == nil {
-			err = s.app.Updater.Init(updater.Config{CurrentVersion: Version, Providers: []updater.Provider{provider}, Window: updater.WindowNone})
-		}
 		if err == nil {
 			release, err = s.app.Updater.Check(ctx)
 		}
@@ -96,6 +109,7 @@ func (s *UpdateService) StartCheck() error {
 		s.state.CheckedAt = time.Now().Format(time.RFC3339)
 		s.release = release
 		s.state.LatestVersion, s.state.Notes = "", ""
+		s.state.Total = 0
 		if release != nil {
 			s.state.LatestVersion, s.state.Notes = release.Version, release.Notes
 			s.state.Total = release.Artifact.Size

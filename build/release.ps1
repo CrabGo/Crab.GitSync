@@ -1,12 +1,13 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.4.0'
+    [string]$Version = '0.4.1'
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot
 try {
+    & (Join-Path $PSScriptRoot 'check-release-notes.ps1') -Version $Version
     # Keep Windows file metadata and the updater's runtime version in agreement.
     $infoPath = Join-Path $PSScriptRoot 'windows/info.json'
     $info = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json

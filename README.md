@@ -91,17 +91,19 @@ wails3 generate bindings -ts -i
 ### 发布新版
 
 ```powershell
-./build/release.ps1 -Version 0.4.0
+./build/release.ps1 -Version 0.4.1
 ```
+
+发布前必须填写 `releases/v版本号.md`，分别列出「新增」「修改」「删除」「优化」的实际功能变化，无变化的栏目写 `- 无。`。脚本会先校验该版本的 ChangeLog，缺失或栏目为空时停止发布。GitHub Release 正文直接使用该文件，不使用自动生成的提交列表。
 
 该脚本构建前端、生成绑定、执行 Go 测试和静态检查，再构建带版本信息的 Windows 程序，输出到 `bin/release`。版本通过 `-X main.Version` 注入程序，同时写入 Windows 文件元数据。
 
 完成代码提交后，推送稳定版本标签，例如：
 
 ```powershell
-git tag v0.4.0
+git tag v0.4.1
 git push origin main
-git push origin v0.4.0
+git push origin v0.4.1
 ```
 
 `.github/workflows/release.yml` 在 main/PR 上执行构建检查，在版本标签上创建草稿 Release，上传程序与校验文件后一起发布，避免应用读取到文件不完整的 Release。不能覆盖已经发布的版本；修复请发布新标签。

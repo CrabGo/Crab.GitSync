@@ -7,6 +7,7 @@
 - Release source: public repository `CrabGo/Crab.GitSync`. Public updates use the stable Releases redirect and asset download URLs, without credentials or API quotas. SHA-256 verification is required.
 - `Version` in `version.go` is overridden with `-X main.Version` by release builds. Windows release asset: `crab-gitsync-windows-amd64.exe`, plus `SHA256SUMS`.
 - Build and validate a release with `./build/release.ps1 -Version X.Y.Z`. Pushing a stable `vX.Y.Z` tag triggers the GitHub release workflow.
+- Every release must have `releases/vX.Y.Z.md` with Chinese sections 新增、修改、删除、优化, each describing actual user-facing changes (use 无 when not applicable). Release builds validate these notes; GitHub publishes that exact file. Never substitute generated commit lists for ChangeLog.
 - Update tests use HTTP test servers and temporary staging files. Never call Restart against the developer's application during tests.
 - `frontend/src` owns the UI. `frontend/bindings` is generated; do not edit it manually.
 - Regenerate bindings after changing exported service APIs: `wails3 generate bindings -ts -i`.

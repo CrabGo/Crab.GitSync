@@ -72,10 +72,12 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          notes="releases/$RELEASE_TAG.md"
+          test -s "$notes"
           if gh release view "$RELEASE_TAG" --json isDraft > existing-release.json 2>/dev/null; then
             test "$(jq -r .isDraft existing-release.json)" = true
           else
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Crab.GitSync $RELEASE_TAG" --generate-notes
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Crab.GitSync $RELEASE_TAG" --notes-file "$notes"
           fi
           gh release upload "$RELEASE_TAG" release/crab-gitsync-windows-amd64.exe release/SHA256SUMS --clobber
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release edit "$RELEASE_TAG" --notes-file "$notes" --draft=false --latest
